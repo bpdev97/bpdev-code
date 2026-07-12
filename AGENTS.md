@@ -1,5 +1,11 @@
 # AGENTS.md
 
+## Personal Fork Maintenance
+
+Before rebasing from upstream or changing a fork-owned feature, read `FORK.md`. It is the
+authoritative inventory of local changes, shared upstream touchpoints, compatibility baselines, and
+verification commands.
+
 ## Task Completion Requirements
 
 - `vp check` and `vp run typecheck` must pass before considering tasks completed.

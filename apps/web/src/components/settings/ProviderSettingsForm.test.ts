@@ -36,6 +36,16 @@ describe("ProviderSettingsForm helpers", () => {
     });
   });
 
+  it("exposes only binary and profile controls for Hermes", () => {
+    const hermes = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("hermes")];
+    expect(hermes).toBeDefined();
+    expect(hermes?.badgeLabel).toBe("Early Access");
+    expect(deriveProviderSettingsFields(hermes!).map((field) => field.key)).toEqual([
+      "binaryPath",
+      "profile",
+    ]);
+  });
+
   it("preserves unknown config keys while omitting empty configurable fields", () => {
     const opencode = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("opencode")];
     expect(opencode).toBeDefined();

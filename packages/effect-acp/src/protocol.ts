@@ -337,37 +337,42 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
     return Queue.offer(serverQueue, message).pipe(Effect.asVoid);
   };
 
-  const handleExitEncoded = (message: RpcMessage.ResponseExitEncoded) =>
-    Ref.get(extPending).pipe(
+  const handleExitEncoded = (message: RpcMessage.ResponseExitEncoded) => {
+    const normalizedMessage = normalizeProtocolErrorDefect(message);
+    return Ref.get(extPending).pipe(
       Effect.flatMap((pending) => {
-        const pendingRequest = pending.get(message.requestId);
+        const pendingRequest = pending.get(normalizedMessage.requestId);
         if (!pendingRequest) {
-          return Queue.offer(clientQueue, message).pipe(Effect.asVoid);
+          return Queue.offer(clientQueue, normalizedMessage).pipe(Effect.asVoid);
         }
-        if (message.exit._tag === "Success") {
-          return completeExtPendingSuccess(message.requestId, message.exit.value);
+        if (normalizedMessage.exit._tag === "Success") {
+          return completeExtPendingSuccess(
+            normalizedMessage.requestId,
+            normalizedMessage.exit.value,
+          );
         }
-        const failure = message.exit.cause.find((entry) => entry._tag === "Fail");
+        const failure = normalizedMessage.exit.cause.find((entry) => entry._tag === "Fail");
         if (failure && isProtocolError(failure.error)) {
           return completeExtPendingFailure(
-            message.requestId,
+            normalizedMessage.requestId,
             AcpError.AcpRequestError.fromProtocolError(failure.error, {
               method: pendingRequest.method,
-              requestId: message.requestId,
-              cause: message.exit.cause,
+              requestId: normalizedMessage.requestId,
+              cause: normalizedMessage.exit.cause,
             }),
           );
         }
         return completeExtPendingFailure(
-          message.requestId,
+          normalizedMessage.requestId,
           AcpError.AcpRequestError.fromExtensionResponseFailure(
             pendingRequest.method,
-            message.requestId,
-            message.exit.cause,
+            normalizedMessage.requestId,
+            normalizedMessage.exit.cause,
           ),
         );
       }),
     );
+  };
 
   const routeDecodedMessage = (
     message: RpcMessage.FromClientEncoded | RpcMessage.FromServerEncoded,
@@ -569,4 +574,34 @@ function isProtocolError(
     "message" in value &&
     typeof value.message === "string"
   );
+}
+
+function normalizeProtocolErrorDefect(
+  message: RpcMessage.ResponseExitEncoded,
+): RpcMessage.ResponseExitEncoded {
+  if (message.exit._tag !== "Failure") {
+    return message;
+  }
+
+  let changed = false;
+  const cause = message.exit.cause.map((entry) => {
+    if (entry._tag !== "Die" || !isProtocolError(entry.defect)) {
+      return entry;
+    }
+    changed = true;
+    return {
+      _tag: "Fail" as const,
+      error: entry.defect,
+    };
+  });
+
+  return changed
+    ? {
+        ...message,
+        exit: {
+          ...message.exit,
+          cause,
+        },
+      }
+    : message;
 }

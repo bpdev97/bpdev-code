@@ -7,8 +7,57 @@ import {
 import { describe, expect, it } from "vite-plus/test";
 import {
   buildProviderInstanceUpdatePatch,
+  buildProviderInstanceSettingsRows,
   formatDiagnosticsDescription,
 } from "./SettingsPanels.logic";
+
+const HERMES_DRIVER = ProviderDriverKind.make("hermes");
+const SETTINGS_PROVIDER_DRIVERS = [
+  ...Object.keys(DEFAULT_SERVER_SETTINGS.providers).map((driver) =>
+    ProviderDriverKind.make(driver),
+  ),
+  HERMES_DRIVER,
+];
+
+describe("buildProviderInstanceSettingsRows", () => {
+  it("does not synthesize a legacy row for an explicit-only driver", () => {
+    const rows = buildProviderInstanceSettingsRows({
+      settings: DEFAULT_SERVER_SETTINGS,
+      providerDrivers: SETTINGS_PROVIDER_DRIVERS,
+    });
+
+    expect(rows.some((row) => row.driver === HERMES_DRIVER)).toBe(false);
+    expect(rows).toHaveLength(Object.keys(DEFAULT_SERVER_SETTINGS.providers).length);
+  });
+
+  it("renders an explicit Hermes instance without reading legacy provider settings", () => {
+    const instanceId = ProviderInstanceId.make("hermes_research");
+    const instance = {
+      driver: HERMES_DRIVER,
+      displayName: "Hermes Research",
+      enabled: true,
+      config: {
+        binaryPath: "/Users/example/.local/bin/hermes",
+        profile: "research",
+        customModels: [],
+      },
+    } satisfies ProviderInstanceConfig;
+    const rows = buildProviderInstanceSettingsRows({
+      settings: {
+        ...DEFAULT_SERVER_SETTINGS,
+        providerInstances: { [instanceId]: instance },
+      },
+      providerDrivers: SETTINGS_PROVIDER_DRIVERS,
+    });
+
+    expect(rows.find((row) => row.instanceId === instanceId)).toEqual({
+      instanceId,
+      instance,
+      driver: HERMES_DRIVER,
+      isDefault: false,
+    });
+  });
+});
 
 describe("formatDiagnosticsDescription", () => {
   it("collapses trace and metric URLs that share the same OTEL base path", () => {

@@ -67,7 +67,9 @@ export interface AcpSessionRuntimeOptions {
     readonly name: string;
     readonly version: string;
   };
-  readonly authMethodId: string;
+  readonly authMethodId:
+    | string
+    | ((initializeResult: EffectAcpSchema.InitializeResponse) => string | undefined);
   readonly mcpServers?: ReadonlyArray<EffectAcpSchema.McpServer>;
   readonly requestLogger?: (event: AcpSessionRequestLogEvent) => Effect.Effect<void, never>;
   readonly protocolLogging?: {
@@ -529,8 +531,20 @@ export const make = (
         acp.agent.initialize(initializePayload),
       );
 
+      const authMethodId =
+        typeof options.authMethodId === "function"
+          ? options.authMethodId(initializeResult)
+          : options.authMethodId;
+      if (!authMethodId?.trim()) {
+        return yield* new EffectAcpErrors.AcpTransportError({
+          operation: "call-rpc",
+          method: "authenticate",
+          detail: "ACP agent did not advertise a non-interactive authentication method",
+          cause: undefined,
+        });
+      }
       const authenticatePayload = {
-        methodId: options.authMethodId,
+        methodId: authMethodId.trim(),
       } satisfies EffectAcpSchema.AuthenticateRequest;
 
       yield* runLoggedRequest(
@@ -877,6 +891,10 @@ const handleSessionUpdate = ({
         continue;
       }
       if (event._tag === "ContentDelta") {
+        if (event.streamKind !== "assistant_text") {
+          yield* Queue.offer(queue, event);
+          continue;
+        }
         if (event.text.trim().length === 0) {
           const assistantSegmentState = yield* Ref.get(assistantSegmentRef);
           if (!assistantSegmentState.activeItemId) {

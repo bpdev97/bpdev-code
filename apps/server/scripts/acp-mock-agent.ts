@@ -17,6 +17,8 @@ const emitToolCalls = process.env.T3_ACP_EMIT_TOOL_CALLS === "1";
 const emitInterleavedAssistantToolCalls =
   process.env.T3_ACP_EMIT_INTERLEAVED_ASSISTANT_TOOL_CALLS === "1";
 const emitGenericToolPlaceholders = process.env.T3_ACP_EMIT_GENERIC_TOOL_PLACEHOLDERS === "1";
+const emitAgentThought = process.env.T3_ACP_EMIT_AGENT_THOUGHT === "1";
+const useHermesModes = process.env.T3_ACP_USE_HERMES_MODES === "1";
 const emitAskQuestion = process.env.T3_ACP_EMIT_ASK_QUESTION === "1";
 const emitXAiAskUserQuestion = process.env.T3_ACP_EMIT_XAI_ASK_USER_QUESTION === "1";
 const emitXAiPromptCompleteThenHang = process.env.T3_ACP_EMIT_XAI_PROMPT_COMPLETE_THEN_HANG === "1";
@@ -42,12 +44,13 @@ const promptResponseText = process.env.T3_ACP_PROMPT_RESPONSE_TEXT;
 const promptDelayMs = Number(process.env.T3_ACP_PROMPT_DELAY_MS ?? "0");
 const permissionOptionIds = {
   allowOnce: process.env.T3_ACP_ALLOW_ONCE_OPTION_ID ?? "allow-once",
+  allowSession: process.env.T3_ACP_ALLOW_SESSION_OPTION_ID,
   allowAlways: process.env.T3_ACP_ALLOW_ALWAYS_OPTION_ID ?? "allow-always",
   rejectOnce: process.env.T3_ACP_REJECT_ONCE_OPTION_ID ?? "reject-once",
 };
 const sessionId = "mock-session-1";
 
-let currentModeId = "ask";
+let currentModeId = useHermesModes ? "default" : "ask";
 let currentModelId = "default";
 let parameterizedModelPicker = false;
 let currentReasoning = "medium";
@@ -253,23 +256,29 @@ function availableModels(): ReadonlyArray<{
   }));
 }
 
-const availableModes: ReadonlyArray<AcpSchema.SessionMode> = [
-  {
-    id: "ask",
-    name: "Ask",
-    description: "Request permission before making any changes",
-  },
-  {
-    id: "architect",
-    name: "Architect",
-    description: "Design and plan software systems without implementation",
-  },
-  {
-    id: "code",
-    name: "Code",
-    description: "Write and modify code with full tool access",
-  },
-];
+const availableModes: ReadonlyArray<AcpSchema.SessionMode> = useHermesModes
+  ? [
+      { id: "default", name: "Default", description: "Ask before edits" },
+      { id: "accept_edits", name: "Accept Edits", description: "Allow workspace edits" },
+      { id: "dont_ask", name: "Don't Ask", description: "Allow edits for this session" },
+    ]
+  : [
+      {
+        id: "ask",
+        name: "Ask",
+        description: "Request permission before making any changes",
+      },
+      {
+        id: "architect",
+        name: "Architect",
+        description: "Design and plan software systems without implementation",
+      },
+      {
+        id: "code",
+        name: "Code",
+        description: "Write and modify code with full tool access",
+      },
+    ];
 
 function modeState(): AcpSchema.SessionModeState {
   return {
@@ -303,6 +312,23 @@ const program = Effect.gen(function* () {
       return {
         protocolVersion: 1,
         agentCapabilities: { loadSession: true },
+        ...(useHermesModes
+          ? {
+              authMethods: [
+                {
+                  id: "mock-provider",
+                  name: "Mock provider credentials",
+                  description: "Already configured mock credentials",
+                },
+                {
+                  type: "terminal" as const,
+                  id: "hermes-setup",
+                  name: "Configure Hermes provider",
+                  args: ["--setup"],
+                },
+              ],
+            }
+          : {}),
       };
     }),
   );
@@ -675,6 +701,15 @@ const program = Effect.gen(function* () {
           },
           options: [
             { optionId: permissionOptionIds.allowOnce, name: "Allow once", kind: "allow_once" },
+            ...(permissionOptionIds.allowSession
+              ? [
+                  {
+                    optionId: permissionOptionIds.allowSession,
+                    name: "Allow for session",
+                    kind: "allow_always" as const,
+                  },
+                ]
+              : []),
             {
               optionId: permissionOptionIds.allowAlways,
               name: "Allow always",
@@ -865,6 +900,16 @@ const program = Effect.gen(function* () {
         },
       });
 
+      if (emitAgentThought) {
+        yield* agent.client.sessionUpdate({
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "agent_thought_chunk",
+            content: { type: "text", text: "mock reasoning" },
+          },
+        });
+      }
+
       yield* agent.client.sessionUpdate({
         sessionId: requestedSessionId,
         update: {
@@ -884,7 +929,7 @@ const program = Effect.gen(function* () {
       });
     }
 
-    if (method !== "session/mode/set") {
+    if (method !== "session/mode/set" && method !== "session/set_mode") {
       return Effect.fail(AcpError.AcpRequestError.methodNotFound(method));
     }
 

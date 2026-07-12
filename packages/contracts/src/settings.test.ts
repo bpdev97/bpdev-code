@@ -5,6 +5,7 @@ import { ProviderInstanceId } from "./providerInstance.ts";
 import {
   ClientSettingsSchema,
   DEFAULT_SERVER_SETTINGS,
+  HermesSettings,
   ServerSettings,
   ServerSettingsPatch,
 } from "./settings.ts";
@@ -13,6 +14,29 @@ const decodeClientSettings = Schema.decodeUnknownSync(ClientSettingsSchema);
 const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
+const decodeHermesSettings = Schema.decodeUnknownSync(HermesSettings);
+
+describe("HermesSettings", () => {
+  it("defaults to the user-managed Hermes binary and default profile", () => {
+    expect(decodeHermesSettings({})).toEqual({
+      enabled: true,
+      binaryPath: "hermes",
+      profile: "default",
+      customModels: [],
+    });
+  });
+
+  it.each(["research", "work_2", "profile-3", "7b"])("accepts profile %s", (profile) => {
+    expect(decodeHermesSettings({ profile }).profile).toBe(profile);
+  });
+
+  it.each(["../research", "work/profile", ".", "has space", ""])(
+    "rejects unsafe profile %s",
+    (profile) => {
+      expect(() => decodeHermesSettings({ profile })).toThrow();
+    },
+  );
+});
 
 describe("ClientSettings word wrap", () => {
   it("defaults word wrap on", () => {

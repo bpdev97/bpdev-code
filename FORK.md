@@ -48,6 +48,73 @@ The macOS app is published through this repository's GitHub Releases. It uses `~
 state and `bpdev-code` for Electron data, so it can run next to the official app without sharing
 files.
 
+## Fork feature delta registry
+
+Agents must read the referenced maintenance record before rebasing upstream or modifying a listed
+feature.
+
+| ID                | Feature                        | Status               | Maintenance record                           | Tests                                                                                                                                           |
+| ----------------- | ------------------------------ | -------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FORK-HERMES-001` | Hermes Agent provider over ACP | Active, early access | [`docs/fork/hermes.md`](docs/fork/hermes.md) | `vp test apps/server/src/provider/hermes packages/contracts/src/settings.test.ts apps/web/src/components/settings/SettingsPanels.logic.test.ts` |
+
+### FORK-HERMES-001 ownership map
+
+Fork-owned paths:
+
+- `apps/server/src/provider/hermes/`
+- `apps/web/src/components/HermesIcon.tsx`
+- `docs/fork/hermes.md`
+- `docs/providers/hermes.md`
+
+Shared upstream touchpoints containing small additive entries:
+
+- `AGENTS.md`
+- `packages/contracts/src/settings.ts`
+- `packages/contracts/src/model.ts`
+- `apps/server/src/provider/builtInDrivers.ts`
+- `apps/server/src/provider/acp/AcpRuntimeModel.ts`
+- `apps/server/src/provider/acp/AcpSessionRuntime.ts`
+- `apps/server/src/provider/acp/AcpCoreRuntimeEvents.ts`
+- `apps/web/src/session-logic.ts`
+- `apps/web/src/components/settings/providerDriverMeta.ts`
+- `apps/web/src/components/settings/SettingsPanels.tsx`
+- `apps/web/src/components/settings/SettingsPanels.logic.ts`
+- `apps/web/src/components/chat/providerIconUtils.ts`
+- `apps/mobile/src/components/ProviderIcon.tsx`
+- `docs/README.md`
+
+The provider is deliberately absent from the legacy `ServerSettings.providers` object. It is
+registered only through `providerInstances`, so removing this fork from a build leaves its settings
+as a preserved unavailable-driver envelope rather than corrupting configuration.
+
+### Hermes upstream sync playbook
+
+1. Record the old and new `upstream/main` SHAs.
+2. Intersect the upstream diff with the shared touchpoints above.
+3. Preserve fork-owned paths unless an upstream provider interface changed.
+4. Resolve shared-file conflicts by reapplying only the additive Hermes entry or the reasoning-stream
+   compatibility case; do not replace the upstream file wholesale.
+5. Review changes to provider instances, ACP session setup, canonical runtime events, settings forms,
+   and mobile notification ingestion even when Git reports no textual conflict.
+6. Run the Hermes-focused tests, `vp check`, `vp run typecheck`, and `vp run lint:mobile`.
+7. Add a row to the sync ledger describing conflicts and behavioral changes.
+
+### Hermes compatibility baseline
+
+Runtime compatibility is capability-probed; newer Hermes versions are not rejected merely because
+their version differs. The detailed source-review and real-binary smoke coverage lives in
+`docs/fork/hermes.md`. A source review or partial transport smoke must not be presented as a
+successful end-to-end chat.
+
+| Date       | Old upstream | New upstream | Hermes baseline                                        | Notes                                                                                                        |
+| ---------- | ------------ | ------------ | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| 2026-07-12 | —            | `f61fa949`   | Hermes Agent 0.18.2 (`4281151`) source / ACP SDK 0.9.0 | Deterministic ACP tests passed; a Mac mini smoke reached model selection and verified detailed error output. |
+
+Remove `FORK-HERMES-001` only when upstream T3 ships equivalent profile-aware Hermes ACP support and
+existing versioned cursors can be migrated or continued without losing sessions. Compare behavior
+and tests before replacing the fork implementation; matching provider branding alone is not
+sufficient.
+
 ## Before merging
 
 Run:
