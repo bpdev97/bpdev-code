@@ -49,6 +49,15 @@
       "channel": "production",
       "environment": "production",
       "autoIncrement": true
+    },
+    "personal": {
+      "extends": "production",
+      "channel": "personal",
+      "environment": "production",
+      "env": {
+        "APP_VARIANT": "production",
+        "NODE_OPTIONS": "--max-old-space-size=4096"
+      }
     }
   },
   "submit": {
@@ -58,6 +67,13 @@
       },
       "android": {
         "track": "internal"
+      }
+    },
+    "personal": {
+      "ios": {
+        "ascAppId": "6790012550",
+        "appleTeamId": "BL9B7SKPHX",
+        "sku": "t3-code-personal"
       }
     }
   }

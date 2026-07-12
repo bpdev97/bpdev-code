@@ -45,6 +45,7 @@ export interface AgentActivityProps {
   readonly activeCount: number;
   readonly updatedAt: string;
   readonly activities: ReadonlyArray<AgentActivityRowProps>;
+  readonly urlScheme?: string;
 }
 
 // This function is serialized into the widget extension's JS bundle, so it
@@ -146,12 +147,11 @@ export function AgentActivity(
   const activeLabel = allDone ? doneLabel : `${props.activeCount} active`;
   const summary = attentionSuffix || activeLabel;
 
-  // Any registered scheme variant routes back to this app; taps are delivered
-  // to the widget's containing app, so the prod scheme is safe for all builds.
+  // Activities started before urlScheme was added still need a valid deep link.
   const deepLinkRow = attentionRow ?? row0;
   const deepLink =
     deepLinkRow && deepLinkRow.deepLink.startsWith("/") && !deepLinkRow.deepLink.startsWith("//")
-      ? `t3code://${deepLinkRow.deepLink.slice(1)}`
+      ? `${props.urlScheme ?? "bpdev-code"}://${deepLinkRow.deepLink.slice(1)}`
       : null;
 
   // A scannable status glyph per phase — reads faster than colored words and

@@ -1,7 +1,14 @@
 import { readHostedPairingRequest } from "@t3tools/shared/remote";
 import * as Schema from "effect/Schema";
 
+import { PERSONAL_DISTRIBUTION } from "../../../../../downstream/config.ts";
+
 const MOBILE_PAIRING_URL_PARAM = "pairingUrl";
+const PERSONAL_MOBILE_SCHEMES = new Set([
+  `${PERSONAL_DISTRIBUTION.mobile.scheme}:`,
+  `${PERSONAL_DISTRIBUTION.mobile.developmentScheme}:`,
+  `${PERSONAL_DISTRIBUTION.mobile.previewScheme}:`,
+]);
 
 export class PairingQrPayloadEmptyError extends Schema.TaggedErrorClass<PairingQrPayloadEmptyError>()(
   "PairingQrPayloadEmptyError",
@@ -63,7 +70,7 @@ export function extractPairingUrlFromQrPayload(payload: string): string {
 
   try {
     const url = new URL(trimmed);
-    if (url.protocol === "t3code:") {
+    if (PERSONAL_MOBILE_SCHEMES.has(url.protocol) || url.protocol === "t3code:") {
       const pairingUrl = url.searchParams.get(MOBILE_PAIRING_URL_PARAM)?.trim() ?? "";
       if (pairingUrl.length > 0) {
         return pairingUrl;

@@ -1,5 +1,6 @@
 import type { ExpoConfig } from "expo/config";
 
+import { PERSONAL_DISTRIBUTION } from "../../downstream/config.ts";
 import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 
 type AppVariant = "development" | "preview" | "production";
@@ -8,6 +9,7 @@ const repoEnv = loadRepoEnv();
 Object.assign(process.env, repoEnv);
 
 const APP_VARIANT = resolveAppVariant(repoEnv.APP_VARIANT);
+const personalMobile = PERSONAL_DISTRIBUTION.mobile;
 
 const VARIANT_CONFIG: Record<
   AppVariant,
@@ -18,35 +20,31 @@ const VARIANT_CONFIG: Record<
     readonly splashIcon: string;
     readonly iosBundleIdentifier: string;
     readonly androidPackage: string;
-    readonly relyingParty?: string;
   }
 > = {
   development: {
-    appName: "T3 Code Dev",
-    scheme: "t3code-dev",
+    appName: personalMobile.developmentAppName,
+    scheme: personalMobile.developmentScheme,
     iosIcon: "./assets/icon-composer-dev.icon",
     splashIcon: "./assets/splash-icon-dev.png",
-    iosBundleIdentifier: "com.t3tools.t3code.dev",
+    iosBundleIdentifier: `${personalMobile.iosBundleIdentifier}.dev`,
     androidPackage: "com.t3tools.t3code.dev",
-    relyingParty: "clerk.t3.codes",
   },
   preview: {
-    appName: "T3 Code Preview",
-    scheme: "t3code-preview",
+    appName: personalMobile.previewAppName,
+    scheme: personalMobile.previewScheme,
     iosIcon: "./assets/icon-composer-prod.icon",
     splashIcon: "./assets/splash-icon-prod.png",
-    iosBundleIdentifier: "com.t3tools.t3code.preview",
+    iosBundleIdentifier: `${personalMobile.iosBundleIdentifier}.preview`,
     androidPackage: "com.t3tools.t3code.preview",
-    relyingParty: "clerk.t3.codes",
   },
   production: {
-    appName: "T3 Code",
-    scheme: "t3code",
+    appName: personalMobile.appName,
+    scheme: personalMobile.scheme,
     iosIcon: "./assets/icon-composer-prod.icon",
     splashIcon: "./assets/splash-icon-prod.png",
-    iosBundleIdentifier: "com.t3tools.t3code",
+    iosBundleIdentifier: personalMobile.iosBundleIdentifier,
     androidPackage: "com.t3tools.t3code",
-    relyingParty: "clerk.t3.codes",
   },
 };
 
@@ -75,8 +73,8 @@ const dmSansFonts = {
 
 const config: ExpoConfig = {
   name: variant.appName,
-  slug: "t3-code",
-  platforms: ["ios", "android"],
+  slug: personalMobile.expoSlug,
+  platforms: ["ios"],
   scheme: variant.scheme,
   version: "0.1.0",
   runtimeVersion: {
@@ -91,7 +89,7 @@ const config: ExpoConfig = {
   userInterfaceStyle: "automatic",
   updates: {
     enabled: true,
-    url: "https://u.expo.dev/d763fcb8-d37c-41ea-a773-b54a0ab4a454",
+    url: `https://u.expo.dev/${personalMobile.expoProjectId}`,
     checkAutomatically: "ON_LOAD",
     fallbackToCacheTimeout: 0,
   },
@@ -99,14 +97,7 @@ const config: ExpoConfig = {
     icon: variant.iosIcon,
     supportsTablet: true,
     bundleIdentifier: variant.iosBundleIdentifier,
-    // Pin code signing to the T3 Tools team so non-interactive `expo run:ios`
-    // does not fall back to a personal team (which cannot sign app groups,
-    // Sign in with Apple, or push notification entitlements).
-    appleTeamId: "ARK85ZXQ4Z",
-    associatedDomains: [
-      `applinks:${variant.relyingParty}`,
-      `webcredentials:${variant.relyingParty}`,
-    ],
+    appleTeamId: personalMobile.appleTeamId,
     infoPlist: {
       NSAppTransportSecurity: {
         NSAllowsArbitraryLoads: true,
@@ -244,11 +235,9 @@ const config: ExpoConfig = {
       tracesDataset: repoEnv.EXPO_PUBLIC_OTLP_TRACES_DATASET ?? null,
       tracesToken: repoEnv.EXPO_PUBLIC_OTLP_TRACES_TOKEN ?? null,
     },
-    eas: {
-      projectId: "d763fcb8-d37c-41ea-a773-b54a0ab4a454",
-    },
+    eas: { projectId: personalMobile.expoProjectId },
   },
-  owner: "pingdotgg",
+  owner: personalMobile.expoOwner,
 };
 
 export default config;
