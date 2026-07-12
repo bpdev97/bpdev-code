@@ -53,15 +53,18 @@ interface ResponseBoundary {
 
 interface ResponseGroup {
   readonly responseId: string;
-  readonly turnId: string | null;
+  readonly turnIds: string[];
   readonly boundary: ResponseBoundary;
   readonly entries: Array<Exclude<ThreadResponseGroupingEntry, { readonly kind: "user" }>>;
 }
 
 const PRELUDE_BOUNDARY_ID = "prelude";
 
-function responseId(turnId: string | null, boundaryId: string): string {
-  return `response:${encodeURIComponent(turnId ?? "unkeyed")}:${encodeURIComponent(boundaryId)}`;
+function responseId(boundaryId: string, turnId: string | null): string {
+  if (boundaryId === PRELUDE_BOUNDARY_ID) {
+    return `response:prelude:${encodeURIComponent(turnId ?? "unkeyed")}`;
+  }
+  return `response:${encodeURIComponent(boundaryId)}`;
 }
 
 function elapsedMs(startIso: string, endIso: string): number | null {
@@ -114,17 +117,20 @@ export function deriveThreadResponseGrouping(input: {
       continue;
     }
 
-    const id = responseId(entry.turnId, boundary.id);
+    const id = responseId(boundary.id, entry.turnId);
     let group = groups.get(id);
     if (group === undefined) {
       group = {
         responseId: id,
-        turnId: entry.turnId,
+        turnIds: [],
         boundary,
         entries: [],
       };
       groups.set(id, group);
       groupOrder.push(group);
+    }
+    if (entry.turnId !== null && !group.turnIds.includes(entry.turnId)) {
+      group.turnIds.push(entry.turnId);
     }
     group.entries.push(entry);
   }
@@ -141,11 +147,13 @@ export function deriveThreadResponseGrouping(input: {
     if (terminalAssistant !== undefined) {
       terminalAssistantEntryIds.add(terminalAssistant.id);
     }
-    if (group.turnId !== null) {
-      const ids = responseIdsByTurnId.get(group.turnId) ?? [];
-      ids.push(group.responseId);
-      responseIdsByTurnId.set(group.turnId, ids);
-      lastGroupByTurnId.set(group.turnId, group);
+    for (const turnId of group.turnIds) {
+      const ids = responseIdsByTurnId.get(turnId) ?? [];
+      if (!ids.includes(group.responseId)) {
+        ids.push(group.responseId);
+      }
+      responseIdsByTurnId.set(turnId, ids);
+      lastGroupByTurnId.set(turnId, group);
     }
   }
 
@@ -157,10 +165,14 @@ export function deriveThreadResponseGrouping(input: {
       : null;
   const foldsByAnchorEntryId = new Map<string, ThreadResponseFold>();
   for (const group of groupOrder) {
-    if (group.turnId === null || group.entries.length === 0) {
+    if (group.turnIds.length === 0 || group.entries.length === 0) {
       continue;
     }
-    const isLastGroupForTurn = lastGroupByTurnId.get(group.turnId) === group;
+    const representativeTurnId =
+      input.latestTurn !== null && group.turnIds.includes(input.latestTurn.turnId)
+        ? input.latestTurn.turnId
+        : group.turnIds.at(-1)!;
+    const isLastGroupForTurn = lastGroupByTurnId.get(representativeTurnId) === group;
     const isCurrentResponse = group.responseId === activeResponseId;
     if (isCurrentResponse) {
       continue;
@@ -180,8 +192,9 @@ export function deriveThreadResponseGrouping(input: {
     const firstEntry = group.entries[0]!;
     const lastEntry = group.entries.at(-1)!;
     const isOnlyGroupForLatestTurn =
-      input.latestTurn?.turnId === group.turnId &&
-      responseIdsByTurnId.get(group.turnId)?.length === 1;
+      group.turnIds.length === 1 &&
+      input.latestTurn?.turnId === representativeTurnId &&
+      responseIdsByTurnId.get(representativeTurnId)?.length === 1;
     const startAt =
       isOnlyGroupForLatestTurn && input.latestTurn?.startedAt
         ? input.latestTurn.startedAt
@@ -192,7 +205,7 @@ export function deriveThreadResponseGrouping(input: {
         : (lastEntry.updatedAt ?? lastEntry.createdAt);
     if (
       isLastGroupForTurn &&
-      input.latestTurn?.turnId === group.turnId &&
+      input.latestTurn?.turnId === representativeTurnId &&
       input.latestTurn.completedAt !== null
     ) {
       endAt = laterTimestamp(endAt, input.latestTurn.completedAt);
@@ -201,7 +214,7 @@ export function deriveThreadResponseGrouping(input: {
     const duration = durationMs === null ? null : formatDuration(durationMs);
     const interrupted =
       isLastGroupForTurn &&
-      input.latestTurn?.turnId === group.turnId &&
+      input.latestTurn?.turnId === representativeTurnId &&
       input.latestTurn.state === "interrupted";
     const label = interrupted
       ? duration
@@ -213,7 +226,7 @@ export function deriveThreadResponseGrouping(input: {
 
     foldsByAnchorEntryId.set(firstEntry.id, {
       responseId: group.responseId,
-      turnId: group.turnId,
+      turnId: representativeTurnId,
       anchorEntryId: firstEntry.id,
       createdAt: firstEntry.createdAt,
       hiddenEntryIds,

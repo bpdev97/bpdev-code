@@ -279,7 +279,7 @@ describe("buildThreadFeed", () => {
     const feed = buildThreadFeed(thread);
     const collapsed = deriveThreadFeedPresentation(feed, thread.latestTurn, new Set());
     expect(collapsed.map((entry) => entry.id)).toEqual([
-      "turn-fold:response:turn-1:prelude",
+      "turn-fold:response:prelude:turn-1",
       "assistant-final",
     ]);
     expect(collapsed[0]).toMatchObject({
@@ -291,10 +291,10 @@ describe("buildThreadFeed", () => {
     const expanded = deriveThreadFeedPresentation(
       feed,
       thread.latestTurn,
-      new Set(["response:turn-1:prelude"]),
+      new Set(["response:prelude:turn-1"]),
     );
     expect(expanded.map((entry) => entry.id)).toEqual([
-      "turn-fold:response:turn-1:prelude",
+      "turn-fold:response:prelude:turn-1",
       "assistant-commentary",
       "tool-completed",
       "assistant-final",
@@ -347,13 +347,93 @@ describe("buildThreadFeed", () => {
 
     expect(presented.map((entry) => entry.id)).toEqual([
       "user-1",
-      "turn-fold:response:turn-steered:user-1",
+      "turn-fold:response:user-1",
       "answer-1",
       "user-2",
-      "turn-fold:response:turn-steered:user-2",
+      "turn-fold:response:user-2",
       "answer-2",
     ]);
   });
+
+  for (const [threadKind, projectId] of [
+    ["generic Chat", "t3code-generic-chat"],
+    ["project thread", "project-1"],
+  ] as const) {
+    it(`keeps one response when a user send spans multiple provider turns in a ${threadKind}`, () => {
+      const firstTurnId = TurnId.make("turn-1");
+      const secondTurnId = TurnId.make("turn-2");
+      const thread = makeThread({
+        id: ThreadId.make(`thread-${projectId}-multi-turn-response`),
+        projectId: ProjectId.make(projectId),
+        title: "Multi-turn response",
+        latestTurn: {
+          turnId: secondTurnId,
+          state: "completed",
+          requestedAt: "2026-04-01T00:00:02.000Z",
+          startedAt: "2026-04-01T00:00:02.000Z",
+          completedAt: "2026-04-01T00:00:06.000Z",
+          assistantMessageId: MessageId.make("answer-2"),
+        },
+        messages: [
+          {
+            id: MessageId.make("user-1"),
+            role: "user",
+            text: "What did we decide?",
+            turnId: null,
+            streaming: false,
+            createdAt: "2026-04-01T00:00:00.000Z",
+            updatedAt: "2026-04-01T00:00:00.000Z",
+          },
+          {
+            id: MessageId.make("commentary-1"),
+            role: "assistant",
+            text: "Checking earlier context.",
+            turnId: firstTurnId,
+            streaming: false,
+            createdAt: "2026-04-01T00:00:01.000Z",
+            updatedAt: "2026-04-01T00:00:01.000Z",
+          },
+          {
+            id: MessageId.make("answer-2"),
+            role: "assistant",
+            text: "Here is the answer.",
+            turnId: secondTurnId,
+            streaming: false,
+            createdAt: "2026-04-01T00:00:05.000Z",
+            updatedAt: "2026-04-01T00:00:06.000Z",
+          },
+        ],
+        activities: [
+          makeActivity({
+            id: EventId.make("work-2"),
+            kind: "tool.completed",
+            tone: "tool",
+            summary: "Looked up context",
+            createdAt: "2026-04-01T00:00:03.000Z",
+            turnId: secondTurnId,
+            payload: {
+              title: "Looked up context",
+              itemType: "file_read",
+              status: "completed",
+            },
+          }),
+        ],
+      });
+
+      const presented = deriveThreadFeedPresentation(
+        buildThreadFeed(thread),
+        thread.latestTurn,
+        new Set(),
+      );
+
+      expect(presented.map((entry) => entry.id)).toEqual([
+        "user-1",
+        "turn-fold:response:user-1",
+        "answer-2",
+      ]);
+      expect(presented.filter((entry) => entry.type === "turn-fold")).toHaveLength(1);
+    });
+  }
 
   it("measures a steer-superseded turn from its user boundary through trailing work", () => {
     const firstTurnId = TurnId.make("turn-1");
