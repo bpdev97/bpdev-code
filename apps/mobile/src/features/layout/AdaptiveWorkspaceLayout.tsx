@@ -2,7 +2,8 @@ import type {
   EnvironmentProject,
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
+import { isGenericChatProjectId } from "@t3tools/shared/genericChat";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   NavigationContext,
@@ -34,12 +35,14 @@ import {
 } from "../../lib/layout";
 import { resolveThreadSelectionNavigationAction } from "../../lib/adaptive-navigation";
 import { scopedThreadKey } from "../../lib/scopedEntities";
+import { useThreadShell } from "../../state/entities";
 import {
   parseActiveThreadPath,
   useHardwareKeyboardCommand,
 } from "../keyboard/hardwareKeyboardCommands";
 import { HomeListOptionsProvider } from "../home/home-list-options";
 import { ThreadNavigationSidebar } from "../threads/ThreadNavigationSidebar";
+import { useStartGenericChat } from "../threads/use-start-generic-chat";
 import { WORKSPACE_PANE_TIMING } from "./workspace-pane-animation";
 import { WorkspaceInspectorPane } from "./workspace-inspector-pane";
 
@@ -257,16 +260,30 @@ export function AdaptiveWorkspaceLayout(props: {
   const activeThread = parseActiveThreadPath(pathname);
   const environmentId = activeThread?.environmentId ?? null;
   const threadId = activeThread?.threadId ?? null;
-  const selectedThreadKey = useMemo(() => {
+  const selectedThreadRef = useMemo<ScopedThreadRef | null>(() => {
     if (environmentId === null || threadId === null) {
       return null;
     }
     try {
-      return scopedThreadKey(EnvironmentId.make(environmentId), ThreadId.make(threadId));
+      return {
+        environmentId: EnvironmentId.make(environmentId),
+        threadId: ThreadId.make(threadId),
+      };
     } catch {
       return null;
     }
   }, [environmentId, threadId]);
+  const selectedThreadKey =
+    selectedThreadRef === null
+      ? null
+      : scopedThreadKey(selectedThreadRef.environmentId, selectedThreadRef.threadId);
+  const activeThreadShell = useThreadShell(selectedThreadRef);
+  const activeThreadIsGenericChat = activeThreadShell
+    ? isGenericChatProjectId(activeThreadShell.projectId)
+    : false;
+  const { genericChatAvailable, startGenericChat } = useStartGenericChat(
+    selectedThreadRef?.environmentId ?? null,
+  );
   // Wrapped in an object: bare functions in useState would be treated as
   // lazy initializers/updaters. `active: false` keeps the outgoing route's
   // content mounted so the pane can animate closed (or be replaced
@@ -337,7 +354,12 @@ export function AdaptiveWorkspaceLayout(props: {
   }, []);
   const handleOpenFilesCommand = useCallback(() => {
     const activeThread = parseActiveThreadPath(pathname);
-    if (!layout.usesSplitView || !fileInspector.supported || activeThread === null) {
+    if (
+      !layout.usesSplitView ||
+      !fileInspector.supported ||
+      activeThread === null ||
+      activeThreadIsGenericChat
+    ) {
       return false;
     }
     showAuxiliaryPane("inspector");
@@ -346,7 +368,14 @@ export function AdaptiveWorkspaceLayout(props: {
     }
     navigation.navigate("ThreadFiles", activeThread);
     return true;
-  }, [fileInspector.supported, layout.usesSplitView, pathname, navigation, showAuxiliaryPane]);
+  }, [
+    activeThreadIsGenericChat,
+    fileInspector.supported,
+    layout.usesSplitView,
+    pathname,
+    navigation,
+    showAuxiliaryPane,
+  ]);
   useHardwareKeyboardCommand("files", handleOpenFilesCommand);
   const toggleAuxiliaryPane = useCallback(() => {
     if (auxiliaryPaneRole === "inspector") {
@@ -496,9 +525,11 @@ export function AdaptiveWorkspaceLayout(props: {
                 onOpenSettings={handleOpenSettings}
                 onOpenEnvironmentSettings={handleOpenEnvironmentSettings}
                 onNewThreadInProject={handleNewThreadInProject}
+                onStartNewChat={startGenericChat}
                 onSelectThread={handleSelectThread}
                 onSearchQueryChange={setPrimarySidebarSearchQuery}
                 searchQuery={primarySidebarSearchQuery}
+                genericChatAvailable={genericChatAvailable}
               />
             </Animated.View>
           ) : null}

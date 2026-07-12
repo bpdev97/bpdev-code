@@ -5,6 +5,7 @@ import type {
 import { LegendList } from "@legendapp/list/react-native";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { MenuAction } from "@react-native-menu/menu";
+import { isGenericChatProject } from "@t3tools/shared/genericChat";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
 import { SymbolView } from "expo-symbols";
 import { useCallback, useMemo, useRef, type ComponentProps } from "react";
@@ -235,14 +236,26 @@ function ProjectGroupLabel(props: {
   readonly environmentLabel: string | null;
   readonly project: EnvironmentProject;
 }) {
+  const iconColor = useThemeColor("--color-icon-subtle");
+  const isGenericChat = isGenericChatProject(props.project);
+
   return (
     <View className="flex-row items-center gap-2.5 px-1 pb-2">
-      <ProjectFavicon
-        environmentId={props.project.environmentId}
-        projectTitle={props.project.title}
-        size={18}
-        workspaceRoot={props.project.workspaceRoot}
-      />
+      {isGenericChat ? (
+        <SymbolView
+          name="bubble.left.and.bubble.right"
+          size={18}
+          tintColor={iconColor}
+          type="monochrome"
+        />
+      ) : (
+        <ProjectFavicon
+          environmentId={props.project.environmentId}
+          projectTitle={props.project.title}
+          size={18}
+          workspaceRoot={props.project.workspaceRoot}
+        />
+      )}
       <Text
         className="flex-1 text-xs font-t3-medium tracking-[0.5px] uppercase text-foreground-muted"
         numberOfLines={1}

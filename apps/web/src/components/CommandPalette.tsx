@@ -45,10 +45,11 @@ import {
   type ReactNode,
 } from "react";
 import { useAtomValue } from "@effect/atom-react";
+import { isGenericChatProject, isGenericChatProjectId } from "@t3tools/shared/genericChat";
 import { OpenAddProjectCommandPaletteProvider } from "../commandPaletteContext";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
-import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { useHandleNewChat, useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useClientSettings } from "../hooks/useSettings";
 import { readLocalApi } from "../localApi";
 import { desktopLocalBackendId } from "../connection/desktopLocal";
@@ -473,7 +474,12 @@ function OpenCommandPaletteDialog(props: {
   const primaryEnvironment = usePrimaryEnvironment();
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
+  const { chatProject, handleNewChat } = useHandleNewChat();
   const projects = useProjects();
+  const regularProjects = useMemo(
+    () => projects.filter((project) => !isGenericChatProject(project)),
+    [projects],
+  );
   const threads = useThreadShells();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const [viewStack, setViewStack] = useState<CommandPaletteView[]>([]);
@@ -582,8 +588,10 @@ function OpenCommandPaletteDialog(props: {
 
   const projectCwdById = useMemo(
     () =>
-      new Map<ProjectId, string>(projects.map((project) => [project.id, project.workspaceRoot])),
-    [projects],
+      new Map<ProjectId, string>(
+        regularProjects.map((project) => [project.id, project.workspaceRoot]),
+      ),
+    [regularProjects],
   );
   const projectTitleById = useMemo(
     () => new Map<ProjectId, string>(projects.map((project) => [project.id, project.title])),
@@ -653,7 +661,7 @@ function OpenCommandPaletteDialog(props: {
   const projectSearchItems = useMemo(
     () =>
       buildProjectActionItems({
-        projects,
+        projects: regularProjects,
         valuePrefix: "project",
         icon: (project) => (
           <ProjectFavicon
@@ -664,13 +672,13 @@ function OpenCommandPaletteDialog(props: {
         ),
         runProject: openProjectFromSearch,
       }),
-    [openProjectFromSearch, projects],
+    [openProjectFromSearch, regularProjects],
   );
 
   const projectThreadItems = useMemo(
     () =>
       buildProjectActionItems({
-        projects,
+        projects: regularProjects,
         valuePrefix: "new-thread-in",
         shortcutCommand: "chat.new",
         icon: (project) => (
@@ -692,7 +700,7 @@ function OpenCommandPaletteDialog(props: {
           );
         },
       }),
-    [activeDraftThread, activeThread, defaultProjectRef, handleNewThread, projects],
+    [activeDraftThread, activeThread, defaultProjectRef, handleNewThread, regularProjects],
   );
 
   const allThreadItems = useMemo(
@@ -962,10 +970,23 @@ function OpenCommandPaletteDialog(props: {
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
 
-  if (projects.length > 0) {
-    const activeProjectTitle = currentProjectId
-      ? (projectTitleById.get(currentProjectId) ?? null)
-      : null;
+  if (chatProject !== null) {
+    actionItems.push({
+      kind: "action",
+      value: "action:new-chat",
+      searchTerms: ["new chat", "general chat", "conversation", "ask anything"],
+      title: "New chat",
+      description: "Start a conversation without a project",
+      icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
+      run: handleNewChat,
+    });
+  }
+
+  if (regularProjects.length > 0) {
+    const activeProjectTitle =
+      currentProjectId && !isGenericChatProjectId(currentProjectId)
+        ? (projectTitleById.get(currentProjectId) ?? null)
+        : null;
 
     if (activeProjectTitle) {
       actionItems.push({

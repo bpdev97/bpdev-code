@@ -45,7 +45,8 @@ export function useSelectedThreadGitActions() {
     { reportFailure: false },
   );
 
-  const selectedThreadGitRootCwd = selectedThreadProject?.workspaceRoot ?? null;
+  const selectedThreadGitRootCwd =
+    selectedThreadCwd === null ? null : (selectedThreadProject?.workspaceRoot ?? null);
   const branchTarget = useMemo(
     () => ({
       environmentId: selectedThread?.environmentId ?? null,

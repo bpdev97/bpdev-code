@@ -1,4 +1,11 @@
-import { ArchiveIcon, ArchiveX, LoaderIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
+import {
+  ArchiveIcon,
+  ArchiveX,
+  LoaderIcon,
+  MessageCircleIcon,
+  PlusIcon,
+  RefreshCwIcon,
+} from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
@@ -20,6 +27,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
 import { createModelSelection } from "@t3tools/shared/model";
+import { isGenericChatProjectId } from "@t3tools/shared/genericChat";
 import * as Arr from "effect/Array";
 import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
@@ -1493,9 +1501,15 @@ export function ArchivedThreadsPanel() {
       ) : (
         archivedGroups.map(({ project, threads: projectThreads }) => (
           <SettingsSection
-            key={project.id}
+            key={`${project.environmentId}:${project.id}`}
             title={project.name}
-            icon={<ProjectFavicon environmentId={project.environmentId} cwd={project.cwd} />}
+            icon={
+              isGenericChatProjectId(project.id) ? (
+                <MessageCircleIcon className="size-4 text-muted-foreground" />
+              ) : (
+                <ProjectFavicon environmentId={project.environmentId} cwd={project.cwd} />
+              )
+            }
           >
             {projectThreads.map((thread) => (
               <SettingsRow

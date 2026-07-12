@@ -67,6 +67,7 @@ export interface ThreadDetailScreenProps {
   readonly environmentId: EnvironmentId;
   readonly projectWorkspaceRoot: string | null;
   readonly threadCwd: string | null;
+  readonly genericChat?: boolean;
   readonly selectedThreadQueueCount: number;
   readonly serverConfig: T3ServerConfig | null;
   readonly layoutVariant?: LayoutVariant;
@@ -472,7 +473,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
               editorRef={composerEditorRef}
               draftMessage={props.draftMessage}
               draftAttachments={props.draftAttachments}
-              placeholder="Ask the repo agent, or run a command…"
+              placeholder={props.genericChat ? "Ask anything…" : "Ask the repo agent…"}
               contentMaxWidth={contentMaxWidth}
               connectionState={props.connectionStateLabel}
               connectionError={props.connectionError}
@@ -484,6 +485,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
               activeThreadBusy={props.activeThreadBusy}
               environmentId={props.environmentId}
               projectCwd={props.projectWorkspaceRoot}
+              runtimeModeLocked={props.genericChat}
               bottomInset={composerBottomInset}
               onChangeDraftMessage={props.onChangeDraftMessage}
               onPickDraftImages={props.onPickDraftImages}

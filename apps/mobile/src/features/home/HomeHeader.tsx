@@ -40,7 +40,9 @@ export function HomeHeader(props: {
   readonly onThreadSortOrderChange: (sortOrder: SidebarThreadSortOrder) => void;
   readonly onProjectGroupingModeChange: (mode: SidebarProjectGroupingMode) => void;
   readonly onOpenSettings: () => void;
+  readonly onStartNewChat: () => void;
   readonly onStartNewTask: () => void;
+  readonly genericChatAvailable: boolean;
 }) {
   const searchBarRef = useRef<SearchBarCommands>(null);
   const iconColor = useThemeColor("--color-icon");
@@ -62,6 +64,15 @@ export function HomeHeader(props: {
           unstable_headerRightItems:
             Platform.OS === "ios"
               ? () => [
+                  withNativeGlassHeaderItem({
+                    accessibilityLabel: "New chat",
+                    disabled: !props.genericChatAvailable,
+                    icon: { name: "bubble.left.and.bubble.right", type: "sfSymbol" } as const,
+                    identifier: "home-new-chat",
+                    label: "",
+                    onPress: props.onStartNewChat,
+                    type: "button",
+                  }),
                   withNativeGlassHeaderItem({
                     accessibilityLabel: "Open settings",
                     icon: { name: "ellipsis", type: "sfSymbol" } as const,
@@ -198,6 +209,13 @@ export function HomeHeader(props: {
           <NativeHeaderToolbar.Spacer width={8} sharesBackground={false} />
           <NativeHeaderToolbar.SearchBarSlot />
           <NativeHeaderToolbar.Spacer width={8} sharesBackground={false} />
+          <NativeHeaderToolbar.Button
+            accessibilityLabel="New chat"
+            disabled={!props.genericChatAvailable}
+            icon="bubble.left.and.bubble.right"
+            onPress={props.onStartNewChat}
+            separateBackground
+          />
           <NativeHeaderToolbar.Button
             accessibilityLabel="New task"
             icon="square.and.pencil"

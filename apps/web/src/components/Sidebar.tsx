@@ -7,6 +7,7 @@ import {
   FolderPlusIcon,
   Globe2Icon,
   LoaderIcon,
+  MessageCircleIcon,
   SearchIcon,
   SettingsIcon,
   SquarePenIcon,
@@ -58,6 +59,7 @@ import {
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
+import { isGenericChatProjectId } from "@t3tools/shared/genericChat";
 import {
   isAtomCommandInterrupted,
   settlePromise,
@@ -259,6 +261,9 @@ function formatProjectMemberActionLabel(
   member: SidebarProjectGroupMember,
   groupedProjectCount: number,
 ): string {
+  if (isGenericChatProjectId(member.id)) {
+    return member.environmentLabel ?? "Chats";
+  }
   if (groupedProjectCount <= 1) {
     return member.title;
   }
@@ -422,7 +427,9 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
     ),
   );
   const threadProjectCwd = threadProject?.workspaceRoot ?? null;
-  const gitCwd = thread.worktreePath ?? threadProjectCwd ?? props.projectCwd;
+  const gitCwd = isGenericChatProjectId(thread.projectId)
+    ? null
+    : (thread.worktreePath ?? threadProjectCwd ?? props.projectCwd);
   const gitStatus = useEnvironmentQuery(
     thread.branch != null && gitCwd !== null
       ? vcsEnvironment.status({
@@ -895,7 +902,7 @@ interface SidebarProjectThreadListProps {
   showEmptyThreadState: boolean;
   shouldShowThreadPanel: boolean;
   isThreadListExpanded: boolean;
-  projectCwd: string;
+  projectCwd: string | null;
   activeRouteThreadKey: string | null;
   threadJumpLabelByKey: ReadonlyMap<string, string>;
   appSettingsConfirmThreadArchive: boolean;
@@ -1099,6 +1106,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     isManualProjectSorting,
     dragHandleProps,
   } = props;
+  const isGenericChat = isGenericChatProjectId(project.id);
   const threadSortOrder = useClientSettings<SidebarThreadSortOrder>(
     (settings) => settings.sidebarThreadSortOrder,
   );
@@ -1589,6 +1597,10 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   const handleProjectButtonContextMenu = useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
       event.preventDefault();
+      if (isGenericChat) {
+        event.stopPropagation();
+        return;
+      }
       suppressProjectClickForContextMenuRef.current = true;
       void (async () => {
         const api = readLocalApi();
@@ -1686,6 +1698,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     [
       copyPathToClipboard,
       handleRemoveProject,
+      isGenericChat,
       openProjectGroupingDialog,
       openProjectRenameDialog,
       project.groupedProjectCount,
@@ -2123,11 +2136,12 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       );
       const threadWorkspacePath =
         thread.worktreePath ?? threadProject?.workspaceRoot ?? project.workspaceRoot ?? null;
+      const canCopyPath = !isGenericChat;
       const clicked = await api.contextMenu.show(
         [
           { id: "rename", label: "Rename thread" },
           { id: "mark-unread", label: "Mark unread" },
-          { id: "copy-path", label: "Copy Path" },
+          ...(canCopyPath ? [{ id: "copy-path" as const, label: "Copy Path" }] : []),
           { id: "copy-thread-id", label: "Copy Thread ID" },
           { id: "delete", label: "Delete", destructive: true, icon: "trash" },
         ],
@@ -2190,6 +2204,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       copyPathToClipboard,
       copyThreadIdToClipboard,
       deleteThread,
+      isGenericChat,
       markThreadUnread,
       memberProjectByScopedKey,
       project.workspaceRoot,
@@ -2241,14 +2256,18 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
               }`}
             />
           )}
-          <ProjectFavicon environmentId={project.environmentId} cwd={project.workspaceRoot} />
+          {isGenericChat ? (
+            <MessageCircleIcon className="size-4 shrink-0 text-muted-foreground/80" />
+          ) : (
+            <ProjectFavicon environmentId={project.environmentId} cwd={project.workspaceRoot} />
+          )}
           <span className="flex min-w-0 flex-1 items-center gap-2">
             <span className="truncate text-xs font-medium text-foreground/90">
               {project.displayName}
             </span>
             {project.groupedProjectCount > 1 ? (
               <span className="shrink-0 text-[10px] text-muted-foreground/60">
-                {project.groupedProjectCount} projects
+                {project.groupedProjectCount} {isGenericChat ? "environments" : "projects"}
               </span>
             ) : null}
           </span>
@@ -2289,7 +2308,11 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
               <div className="pointer-events-none absolute top-[calc(50%+1px)] right-0.5 -translate-y-1/2 opacity-0 transition-opacity duration-150 max-sm:pointer-events-auto max-sm:opacity-100 group-hover/project-header:pointer-events-auto group-hover/project-header:opacity-100 group-focus-within/project-header:pointer-events-auto group-focus-within/project-header:opacity-100">
                 <button
                   type="button"
-                  aria-label={`Create new thread in ${project.displayName}`}
+                  aria-label={
+                    isGenericChat
+                      ? "Create new chat"
+                      : `Create new thread in ${project.displayName}`
+                  }
                   data-testid="new-thread-button"
                   className={SIDEBAR_ICON_ACTION_BUTTON_CLASS}
                   onClick={handleCreateThreadClick}
@@ -2300,7 +2323,11 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
             }
           />
           <TooltipPopup side="top">
-            {newThreadShortcutLabel ? `New thread (${newThreadShortcutLabel})` : "New thread"}
+            {isGenericChat
+              ? "New chat"
+              : newThreadShortcutLabel
+                ? `New thread (${newThreadShortcutLabel})`
+                : "New thread"}
           </TooltipPopup>
         </Tooltip>
       </div>
@@ -2315,7 +2342,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         showEmptyThreadState={showEmptyThreadState}
         shouldShowThreadPanel={shouldShowThreadPanel}
         isThreadListExpanded={isThreadListExpanded}
-        projectCwd={project.workspaceRoot}
+        projectCwd={isGenericChat ? null : project.workspaceRoot}
         activeRouteThreadKey={activeRouteThreadKey}
         threadJumpLabelByKey={threadJumpLabelByKey}
         appSettingsConfirmThreadArchive={appSettingsConfirmThreadArchive}
@@ -2852,6 +2879,7 @@ interface SidebarProjectsContentProps {
   handleNewThread: ReturnType<typeof useNewThreadHandler>;
   archiveThread: ReturnType<typeof useThreadActions>["archiveThread"];
   deleteThread: ReturnType<typeof useThreadActions>["deleteThread"];
+  chatProjects: readonly SidebarProjectSnapshot[];
   sortedProjects: readonly SidebarProjectSnapshot[];
   expandedThreadListsByProject: ReadonlySet<string>;
   activeRouteProjectKey: string | null;
@@ -2893,6 +2921,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     handleNewThread,
     archiveThread,
     deleteThread,
+    chatProjects,
     sortedProjects,
     expandedThreadListsByProject,
     activeRouteProjectKey,
@@ -2984,6 +3013,40 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
         </SidebarGroup>
       ) : null}
       <LocalSecondaryStatus />
+      {chatProjects.length > 0 ? (
+        <SidebarGroup className="px-2 py-2">
+          <div className="mb-1 flex items-center justify-between px-2">
+            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
+              Chats
+            </span>
+          </div>
+          <SidebarMenu ref={attachProjectListAutoAnimateRef}>
+            {chatProjects.map((project) => (
+              <SidebarProjectListRow
+                key={project.projectKey}
+                project={project}
+                isThreadListExpanded={expandedThreadListsByProject.has(project.projectKey)}
+                activeRouteThreadKey={
+                  activeRouteProjectKey === project.projectKey ? routeThreadKey : null
+                }
+                newThreadShortcutLabel={newThreadShortcutLabel}
+                handleNewThread={handleNewThread}
+                archiveThread={archiveThread}
+                deleteThread={deleteThread}
+                threadJumpLabelByKey={threadJumpLabelByKey}
+                attachThreadListAutoAnimateRef={attachThreadListAutoAnimateRef}
+                expandThreadListForProject={expandThreadListForProject}
+                collapseThreadListForProject={collapseThreadListForProject}
+                dragInProgressRef={dragInProgressRef}
+                suppressProjectClickAfterDragRef={suppressProjectClickAfterDragRef}
+                suppressProjectClickForContextMenuRef={suppressProjectClickForContextMenuRef}
+                isManualProjectSorting={false}
+                dragHandleProps={null}
+              />
+            ))}
+          </SidebarMenu>
+        </SidebarGroup>
+      ) : null}
       <SidebarGroup className="px-2 py-2">
         <div className="mb-1 flex items-center justify-between pl-2 pr-1.5">
           <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
@@ -3400,6 +3463,14 @@ export default function Sidebar() {
     sidebarProjects,
     visibleThreads,
   ]);
+  const chatProjects = useMemo(
+    () => sortedProjects.filter((project) => isGenericChatProjectId(project.id)),
+    [sortedProjects],
+  );
+  const regularProjects = useMemo(
+    () => sortedProjects.filter((project) => !isGenericChatProjectId(project.id)),
+    [sortedProjects],
+  );
   const isManualProjectSorting = sidebarProjectSortOrder === "manual";
   const visibleSidebarThreadKeys = useMemo(
     () =>
@@ -3725,7 +3796,8 @@ export default function Sidebar() {
             handleNewThread={handleNewThread}
             archiveThread={archiveThread}
             deleteThread={deleteThread}
-            sortedProjects={sortedProjects}
+            chatProjects={chatProjects}
+            sortedProjects={regularProjects}
             expandedThreadListsByProject={expandedThreadListsByProject}
             activeRouteProjectKey={activeRouteProjectKey}
             routeThreadKey={routeThreadKey}
@@ -3739,7 +3811,7 @@ export default function Sidebar() {
             suppressProjectClickAfterDragRef={suppressProjectClickAfterDragRef}
             suppressProjectClickForContextMenuRef={suppressProjectClickForContextMenuRef}
             attachProjectListAutoAnimateRef={attachProjectListAutoAnimateRef}
-            projectsLength={projects.length}
+            projectsLength={regularProjects.length}
           />
 
           <SidebarSeparator />

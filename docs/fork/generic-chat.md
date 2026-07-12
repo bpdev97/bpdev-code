@@ -1,0 +1,72 @@
+# Generic chat fork maintenance record
+
+## Decision
+
+General conversations use a managed project rather than weakening T3's project, thread, and
+provider-session invariants. Every server ensures one project with the reserved ID
+`t3code-generic-chat` and the display title `Chats` at startup. Its workspace is an app-owned
+scratch directory at `<baseDir>/workspaces/generic-chat`; it is an implementation detail, not user
+content.
+
+The reserved project ID is the capability marker. Do not detect generic chats by title or path:
+both can be repaired or vary between environments, while the ID is stable and intentionally groups
+the same logical `Chats` entry across servers.
+
+## Provider behavior
+
+Before every generic-chat turn, the server adds host context telling the provider that no user
+project or working directory is attached and that it must not inspect files, run shell or Git
+commands, or use project tools. The stored user message remains unchanged. Attachment-only turns
+still receive the host context.
+
+Generic sessions are always started in `approval-required` mode regardless of thread metadata.
+For Codex this maps to a read-only sandbox. Providers still require a real process cwd, so the
+managed workspace is the containment boundary if a provider disregards the behavioral instruction.
+The server pins generic sessions to that root even if stale or malformed thread metadata contains a
+worktree path. This feature does not pretend that the provider protocol supports a null cwd.
+
+## Client behavior
+
+Web, desktop, and mobile expose a first-class **New chat** action that targets the managed project
+in the preferred environment, falling back to any available environment. The logical project is
+grouped across environments under `Chats`.
+
+Generic-chat threads do not expose project-only affordances:
+
+- files, diffs, Git, worktrees, branches, project scripts, and terminals are unavailable;
+- new-chat drafts use the local workspace mode with no branch, worktree, or origin selection;
+- runtime selection is fixed by the server even if stale client metadata says otherwise.
+
+The mobile working-directory selector is the central capability boundary for existing threads. A
+generic chat returns `null` there, which keeps file, Git, review, and terminal consumers aligned.
+Direct file and terminal routes also reject generic chats so deep links cannot bypass the UI guard.
+
+## Compatibility invariants
+
+- Keep `GENERIC_CHAT_PROJECT_ID` stable; changing it or creating per-device IDs strands old chats.
+- Provisioning must remain idempotent and repair the managed title/path without deleting threads.
+- Do not infer generic-chat behavior from `Chats` or a `generic-chat` path.
+- Provider context must be applied on every turn, including resumed sessions and attachment-only
+  turns.
+- Compare an active provider session against the effective forced runtime mode, not mutable thread
+  metadata, when deciding whether to restart it.
+- Resolve a generic provider session cwd from the managed project only; never honor its thread
+  branch or worktree metadata.
+- Never expose the managed scratch directory as a user workspace in web or mobile UI.
+- Keep normal project behavior unchanged; shared helpers must branch only on the reserved ID.
+
+## Revalidation procedure
+
+Run the focused tests:
+
+```sh
+vp test packages/shared/src/genericChat.test.ts \
+  packages/client-runtime/src/state/projectGrouping.genericChat.test.ts \
+  apps/server/src/genericChat.test.ts \
+  apps/server/src/orchestration/Layers/ProviderCommandReactor.genericChat.test.ts \
+  apps/mobile/src/lib/repositoryGroups.test.ts
+```
+
+Then run `vp check`, `vp run typecheck`, and `vp run lint:mobile`. Smoke-test New Chat on web and
+mobile, switch its environment, resume an existing chat, and confirm that files, Git, terminal,
+branch, worktree, and project-script controls remain absent.

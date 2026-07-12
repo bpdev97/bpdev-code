@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import * as Option from "effect/Option";
 import { EnvironmentId, ThreadId, type ProjectScript } from "@t3tools/contracts";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
+import { GENERIC_CHAT_RUNTIME_MODE, isGenericChatProject } from "@t3tools/shared/genericChat";
 import { Platform, Pressable, ScrollView, Text as RNText, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWorkspaceState } from "../../state/workspace";
@@ -186,6 +187,7 @@ function ThreadRouteContent(
   const { onReconnectEnvironment } = useRemoteConnections();
   const { selectedThread, selectedThreadProject, selectedEnvironmentConnection } =
     useThreadSelection();
+  const isGenericChat = isGenericChatProject(selectedThreadProject);
   const selectedThreadDetailState = props.selectedThreadDetailState;
   const selectedThreadDetail = Option.getOrNull(selectedThreadDetailState.data);
   const { selectedThreadCwd } = useSelectedThreadWorktree();
@@ -269,11 +271,19 @@ function ThreadRouteContent(
         ? {
             ...selectedThread,
             modelSelection: composer.modelSelection ?? selectedThread.modelSelection,
-            runtimeMode: composer.runtimeMode ?? selectedThread.runtimeMode,
+            runtimeMode: isGenericChat
+              ? GENERIC_CHAT_RUNTIME_MODE
+              : (composer.runtimeMode ?? selectedThread.runtimeMode),
             interactionMode: composer.interactionMode ?? selectedThread.interactionMode,
           }
         : null,
-    [composer.interactionMode, composer.modelSelection, composer.runtimeMode, selectedThread],
+    [
+      composer.interactionMode,
+      composer.modelSelection,
+      composer.runtimeMode,
+      isGenericChat,
+      selectedThread,
+    ],
   );
 
   /* ─── Native header theming ──────────────────────────────────────── */
@@ -302,9 +312,10 @@ function ThreadRouteContent(
     () =>
       buildTerminalMenuSessions({
         knownSessions: knownTerminalSessions,
-        workspaceRoot: selectedThreadProject?.workspaceRoot ?? null,
+        workspaceRoot:
+          selectedThreadCwd === null ? null : (selectedThreadProject?.workspaceRoot ?? null),
       }),
-    [knownTerminalSessions, selectedThreadProject?.workspaceRoot],
+    [knownTerminalSessions, selectedThreadCwd, selectedThreadProject?.workspaceRoot],
   );
   const selectedThreadDetailWorktreePath = selectedThreadDetail?.worktreePath ?? null;
   const handleReconnectEnvironment = useCallback(() => {
@@ -468,7 +479,7 @@ function ThreadRouteContent(
         hasWorkspaceRoot: Boolean(selectedThreadProject?.workspaceRoot),
       });
 
-      if (!selectedThread || !selectedThreadProject?.workspaceRoot) {
+      if (!selectedThread || selectedThreadCwd === null || !selectedThreadProject?.workspaceRoot) {
         return;
       }
 
@@ -478,7 +489,7 @@ function ThreadRouteContent(
         ...(nextTerminalId ? { terminalId: nextTerminalId } : {}),
       });
     },
-    [navigation, selectedThread, selectedThreadProject?.workspaceRoot],
+    [navigation, selectedThread, selectedThreadCwd, selectedThreadProject?.workspaceRoot],
   );
 
   const handleOpenNewTerminal = useCallback(() => {
@@ -488,7 +499,7 @@ function ThreadRouteContent(
       listedTerminalIds: terminalMenuSessions.map((session) => session.terminalId),
     });
 
-    if (!selectedThread || !selectedThreadProject?.workspaceRoot) {
+    if (!selectedThread || selectedThreadCwd === null || !selectedThreadProject?.workspaceRoot) {
       return;
     }
 
@@ -500,7 +511,13 @@ function ThreadRouteContent(
       threadId: String(selectedThread.id),
       terminalId: nextId,
     });
-  }, [navigation, selectedThread, selectedThreadProject?.workspaceRoot, terminalMenuSessions]);
+  }, [
+    navigation,
+    selectedThread,
+    selectedThreadCwd,
+    selectedThreadProject?.workspaceRoot,
+    terminalMenuSessions,
+  ]);
 
   const handleRunProjectScript = useCallback(
     async (script: ProjectScript) => {
@@ -511,7 +528,7 @@ function ThreadRouteContent(
         hasWorkspaceRoot: Boolean(selectedThreadProject?.workspaceRoot),
       });
 
-      if (!selectedThread || !selectedThreadProject?.workspaceRoot) {
+      if (!selectedThread || selectedThreadCwd === null || !selectedThreadProject?.workspaceRoot) {
         terminalDebugLog("project-script:abort", {
           scriptId: script.id,
           reason: "no-thread-or-workspace",
@@ -566,6 +583,7 @@ function ThreadRouteContent(
     [
       navigation,
       selectedThread,
+      selectedThreadCwd,
       selectedThreadDetailWorktreePath,
       selectedThreadProject,
       terminalMenuSessions,
@@ -583,13 +601,14 @@ function ThreadRouteContent(
         : undefined,
     onOpenFilesInspector:
       fileInspector.supported && selectedThreadCwd !== null ? handleOpenFilesInspector : undefined,
-    onOpenGitInspector: fileInspector.supported ? handleOpenGitInspector : undefined,
+    onOpenGitInspector:
+      fileInspector.supported && selectedThreadCwd !== null ? handleOpenGitInspector : undefined,
     currentBranch: selectedThread?.branch ?? null,
     gitStatus: gitStatus.data,
     gitOperationLabel: gitState.gitOperationLabel,
-    canOpenTerminal: Boolean(selectedThreadProject?.workspaceRoot),
-    canOpenFiles: Boolean(selectedThreadProject?.workspaceRoot),
-    projectScripts: selectedThreadProject?.scripts ?? [],
+    canOpenTerminal: selectedThreadCwd !== null,
+    canOpenFiles: selectedThreadCwd !== null,
+    projectScripts: selectedThreadCwd === null ? [] : (selectedThreadProject?.scripts ?? []),
     terminalSessions: terminalMenuSessions,
     showDirectFileControl: layout.usesSplitView,
     onOpenTerminal: handleOpenTerminal,
@@ -598,8 +617,10 @@ function ThreadRouteContent(
     onPull: gitActions.onPullSelectedThreadBranch,
     onRunAction: gitActions.onRunSelectedThreadGitAction,
   };
-  const threadCenterHeaderItems = useThreadGitCenterHeaderItems(threadGitControlProps);
-  const compactRightHeaderItems = useThreadGitRightHeaderItems(threadGitControlProps);
+  const projectThreadCenterHeaderItems = useThreadGitCenterHeaderItems(threadGitControlProps);
+  const projectCompactRightHeaderItems = useThreadGitRightHeaderItems(threadGitControlProps);
+  const threadCenterHeaderItems = isGenericChat ? [] : projectThreadCenterHeaderItems;
+  const compactRightHeaderItems = isGenericChat ? [] : projectCompactRightHeaderItems;
   const splitLeftHeaderItems = useMemo<NativeHeaderItems>(
     () => [
       {
@@ -676,9 +697,14 @@ function ThreadRouteContent(
   const serverConfig = routeEnvironmentRuntime?.serverConfig ?? null;
   const renderThreadRouteBody = (showActionControls: boolean) => (
     <>
-      <ThreadGitControls {...threadGitControlProps} showActionControls={showActionControls} />
+      <ThreadGitControls
+        {...threadGitControlProps}
+        showActionControls={showActionControls && !isGenericChat}
+      />
 
-      <GitActionProgressOverlay progress={gitActionProgress} onDismiss={dismissGitActionResult} />
+      {!isGenericChat ? (
+        <GitActionProgressOverlay progress={gitActionProgress} onDismiss={dismissGitActionResult} />
+      ) : null}
 
       <View className="flex-1 bg-screen">
         <ThreadDetailScreen
@@ -701,8 +727,11 @@ function ThreadRouteContent(
           threadSyncStatus={selectedThreadDetailState.status}
           activeThreadBusy={composer.activeThreadBusy}
           environmentId={selectedThread.environmentId}
-          projectWorkspaceRoot={selectedThreadProject?.workspaceRoot ?? null}
+          projectWorkspaceRoot={
+            selectedThreadCwd === null ? null : (selectedThreadProject?.workspaceRoot ?? null)
+          }
           threadCwd={selectedThreadCwd}
+          genericChat={isGenericChat}
           selectedThreadQueueCount={composer.selectedThreadQueueCount}
           layoutVariant={layout.variant}
           usesAutomaticContentInsets={usesNativeHeaderGlass}

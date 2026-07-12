@@ -55,6 +55,7 @@ import {
 } from "../../state/use-remote-environment-registry";
 import { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { type VcsRef } from "@t3tools/client-runtime/state/vcs";
+import { GENERIC_CHAT_RUNTIME_MODE, isGenericChatProject } from "@t3tools/shared/genericChat";
 
 type WorkspaceMode = "local" | "worktree";
 
@@ -283,6 +284,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   // identity is the primary signal; projects that haven't reported one yet (still
   // indexing) fall back to workspace basename / title so a valid host isn't hidden.
   const selectedRepositoryKey = selectedProject?.repositoryIdentity?.canonicalKey ?? null;
+  const selectedProjectIsGenericChat = isGenericChatProject(selectedProject);
   // `|| null` (not `??`): a pending-task placeholder project can have an empty
   // workspaceRoot, and an "" basename would reject every real host below.
   const selectedWorkspaceBasename = selectedProject?.workspaceRoot.split("/").at(-1) || null;
@@ -294,6 +296,9 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       readonly environmentLabel: string;
     }> = [];
     const hostsSelectedRepository = (project: EnvironmentProject) => {
+      if (selectedProjectIsGenericChat) {
+        return isGenericChatProject(project);
+      }
       if (selectedRepositoryKey === null && selectedWorkspaceBasename === null) {
         return true;
       }
@@ -330,6 +335,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     selectedRepositoryKey,
     selectedWorkspaceBasename,
     selectedProjectTitle,
+    selectedProjectIsGenericChat,
   ]);
 
   const selectedEnvironmentServerConfig = useEnvironmentServerConfig(
@@ -468,10 +474,10 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     () => ({
       environmentId: selectedProject?.environmentId ?? null,
       // `|| null` also skips the stand-in project's empty workspaceRoot.
-      cwd: selectedProject?.workspaceRoot || null,
+      cwd: selectedProjectIsGenericChat ? null : selectedProject?.workspaceRoot || null,
       query: null,
     }),
-    [selectedProject?.environmentId, selectedProject?.workspaceRoot],
+    [selectedProject?.environmentId, selectedProject?.workspaceRoot, selectedProjectIsGenericChat],
   );
   const branchState = useBranches(branchTarget);
   const branchesLoading = branchState.isPending;
@@ -514,6 +520,9 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       // whatever project is first on the target machine.
       const workspaceBasename = selectedProject?.workspaceRoot.split("/").at(-1) || null;
       const match =
+        (selectedProjectIsGenericChat
+          ? projectsOnTarget.find((project) => isGenericChatProject(project))
+          : undefined) ??
         (repositoryKey !== null
           ? projectsOnTarget.find(
               (project) => (project.repositoryIdentity?.canonicalKey ?? null) === repositoryKey,
@@ -530,7 +539,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       setSelectedEnvironmentId(environmentId);
       setSelectedProjectKey(match ? scopedProjectKey(match.environmentId, match.id) : null);
     },
-    [projects, selectedProject],
+    [projects, selectedProject, selectedProjectIsGenericChat],
   );
 
   const setWorkspaceMode = useCallback(
@@ -667,7 +676,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         return null;
       }
       const workspaceSelection = draft.workspaceSelection;
-      const mode = workspaceSelection?.mode ?? "local";
+      const mode = selectedProjectIsGenericChat ? "local" : (workspaceSelection?.mode ?? "local");
       // When the selection is the stand-in built from the queued snapshot,
       // persist the original (possibly absent) snapshot values — the
       // stand-in's placeholder title/workspaceRoot must never be written back
@@ -676,9 +685,11 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       const projectTitle = usingPendingSnapshot
         ? editingPendingTask?.creation?.projectTitle
         : selectedProject.title;
-      const projectCwd = usingPendingSnapshot
-        ? editingPendingTask?.creation?.projectCwd
-        : selectedProject.workspaceRoot;
+      const projectCwd = selectedProjectIsGenericChat
+        ? undefined
+        : usingPendingSnapshot
+          ? editingPendingTask?.creation?.projectCwd
+          : selectedProject.workspaceRoot;
       return {
         environmentId: selectedProject.environmentId,
         threadId: ThreadId.make(metadata.threadId),
@@ -687,16 +698,23 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         text,
         attachments: draft.attachments,
         modelSelection: draftModelSelection,
-        runtimeMode: draft.runtimeMode ?? DEFAULT_RUNTIME_MODE,
+        runtimeMode: selectedProjectIsGenericChat
+          ? GENERIC_CHAT_RUNTIME_MODE
+          : (draft.runtimeMode ?? DEFAULT_RUNTIME_MODE),
         interactionMode: draft.interactionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE,
         creation: {
           projectId: selectedProject.id,
           ...(projectTitle !== undefined ? { projectTitle } : {}),
           ...(projectCwd !== undefined ? { projectCwd } : {}),
           workspaceMode: mode,
-          branch: workspaceSelection?.branch ?? null,
-          worktreePath: mode === "worktree" ? null : (workspaceSelection?.worktreePath ?? null),
-          ...(workspaceSelection?.startFromOrigin ? { startFromOrigin: true } : {}),
+          branch: selectedProjectIsGenericChat ? null : (workspaceSelection?.branch ?? null),
+          worktreePath:
+            selectedProjectIsGenericChat || mode === "worktree"
+              ? null
+              : (workspaceSelection?.worktreePath ?? null),
+          ...(!selectedProjectIsGenericChat && workspaceSelection?.startFromOrigin
+            ? { startFromOrigin: true }
+            : {}),
         },
         createdAt: metadata.createdAt,
       };
@@ -707,6 +725,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       selectedModel,
       selectedProject,
       selectedProjectDraftKey,
+      selectedProjectIsGenericChat,
     ],
   );
 

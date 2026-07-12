@@ -192,7 +192,7 @@ function useThreadFilesWorkspace(params: {
   } | null;
 
   return {
-    cwd: selectedThreadCwd ?? project?.workspaceRoot ?? null,
+    cwd: selectedThreadCwd,
     environmentId,
     projectName: project?.title ?? "Files",
     selectedThread,

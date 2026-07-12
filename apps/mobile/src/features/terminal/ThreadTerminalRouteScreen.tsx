@@ -1,5 +1,6 @@
 import { DEFAULT_TERMINAL_ID, EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { type KnownTerminalSession } from "@t3tools/client-runtime/state/terminal";
+import { isGenericChatProject } from "@t3tools/shared/genericChat";
 import { SymbolView } from "expo-symbols";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
@@ -165,6 +166,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
   const params = props.route.params;
   const { selectedThread, selectedThreadProject, selectedEnvironmentConnection } =
     useThreadSelection();
+  const isGenericChat = isGenericChatProject(selectedThreadProject);
   const selectedThreadDetail = useSelectedThreadDetail();
   const routeEnvironmentIdRaw = firstRouteParam(params.environmentId);
   const routeThreadIdRaw = firstRouteParam(params.threadId);
@@ -262,7 +264,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     runningSession !== null &&
     runningSession.target.terminalId !== terminalId;
   const launchLocationCandidate = useMemo(() => {
-    if (!selectedThread || !selectedThreadProject?.workspaceRoot) {
+    if (isGenericChat || !selectedThread || !selectedThreadProject?.workspaceRoot) {
       return null;
     }
     if (pendingLaunch) {
@@ -280,6 +282,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     });
   }, [
     activeKnownSession?.state.summary,
+    isGenericChat,
     pendingLaunch,
     selectedThread,
     selectedThreadDetail?.worktreePath,
@@ -395,7 +398,9 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
       preview: terminal.buffer.slice(0, 160),
     });
   }, [terminal.buffer, terminal.buffer.length, terminalKey]);
-  const cwd = terminal.summary?.cwd ?? selectedThreadProject?.workspaceRoot ?? null;
+  const cwd = isGenericChat
+    ? null
+    : (terminal.summary?.cwd ?? selectedThreadProject?.workspaceRoot ?? null);
   const hostPlatform = useMemo(
     () => inferHostPlatform(selectedEnvironmentConnection?.environmentLabel ?? null),
     [selectedEnvironmentConnection?.environmentLabel],
@@ -460,7 +465,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
     () =>
       buildTerminalMenuSessions({
         knownSessions,
-        workspaceRoot: selectedThreadProject?.workspaceRoot ?? null,
+        workspaceRoot: isGenericChat ? null : (selectedThreadProject?.workspaceRoot ?? null),
         currentSession: {
           terminalId,
           cwd: cwd ?? null,
@@ -472,6 +477,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
       }),
     [
       cwd,
+      isGenericChat,
       knownSessions,
       selectedThreadProject?.workspaceRoot,
       terminal.hasRunningSubprocess,
@@ -831,6 +837,17 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
         <EmptyState
           title="Thread unavailable"
           detail="This terminal route needs an active thread and workspace."
+        />
+      </View>
+    );
+  }
+
+  if (isGenericChat) {
+    return (
+      <View className="flex-1 bg-screen">
+        <EmptyState
+          title="Terminal unavailable"
+          detail="General chats are not attached to a project or working directory."
         />
       </View>
     );

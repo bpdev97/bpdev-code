@@ -1,6 +1,11 @@
 import * as Order from "effect/Order";
 import * as Arr from "effect/Array";
 import type { RepositoryIdentity } from "@t3tools/contracts";
+import {
+  GENERIC_CHAT_LOGICAL_PROJECT_KEY,
+  GENERIC_CHAT_PROJECT_TITLE,
+  isGenericChatProject,
+} from "@t3tools/shared/genericChat";
 
 import { scopedProjectKey } from "./scopedEntities";
 import { EnvironmentProject, EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
@@ -30,12 +35,18 @@ function compareIsoDateDescending(left: string, right: string): number {
 }
 
 function deriveRepositoryGroupKey(project: EnvironmentProject): string {
+  if (isGenericChatProject(project)) {
+    return GENERIC_CHAT_LOGICAL_PROJECT_KEY;
+  }
   return (
     project.repositoryIdentity?.canonicalKey ?? scopedProjectKey(project.environmentId, project.id)
   );
 }
 
 function deriveRepositoryTitle(project: EnvironmentProject): string {
+  if (isGenericChatProject(project)) {
+    return GENERIC_CHAT_PROJECT_TITLE;
+  }
   const identity = project.repositoryIdentity;
   return identity?.displayName ?? identity?.name ?? project.title;
 }

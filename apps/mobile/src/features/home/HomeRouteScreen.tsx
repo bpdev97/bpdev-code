@@ -16,6 +16,7 @@ import { HomeHeader } from "./HomeHeader";
 import { useHomeListOptions } from "./home-list-options";
 import { usePendingTaskListActions } from "./usePendingTaskListActions";
 import { useThreadListActions } from "./useThreadListActions";
+import { useStartGenericChat } from "../threads/use-start-generic-chat";
 
 /* ─── Route screen ───────────────────────────────────────────────────── */
 
@@ -56,6 +57,7 @@ export function HomeRouteScreen() {
     setThreadSortOrder,
   } = useHomeListOptions(availableEnvironmentIds);
   const selectedEnvironmentId = listOptions.selectedEnvironmentId;
+  const { genericChatAvailable, startGenericChat } = useStartGenericChat(selectedEnvironmentId);
 
   // In split layouts the persistent sidebar IS the thread list — Home becomes
   // an empty detail pane so selecting a thread never transitions layouts.
@@ -71,8 +73,16 @@ export function HomeRouteScreen() {
               onPress={() => navigation.navigate("NewTaskSheet", { screen: "NewTask" })}
             />
           }
-        />
+        >
+          <NativeHeaderToolbar.Button
+            accessibilityLabel="New chat"
+            disabled={!genericChatAvailable}
+            icon="bubble.left.and.bubble.right"
+            onPress={startGenericChat}
+          />
+        </WorkspaceSidebarToolbar>
         <WorkspaceEmptyDetail
+          onStartNewChat={genericChatAvailable ? startGenericChat : undefined}
           onStartNewTask={() => navigation.navigate("NewTaskSheet", { screen: "NewTask" })}
         />
       </>
@@ -94,8 +104,10 @@ export function HomeRouteScreen() {
         onProjectGroupingModeChange={setProjectGroupingMode}
         onProjectSortOrderChange={setProjectSortOrder}
         onSearchQueryChange={setSearchQuery}
+        onStartNewChat={startGenericChat}
         onStartNewTask={() => navigation.navigate("NewTaskSheet", { screen: "NewTask" })}
         onThreadSortOrderChange={setThreadSortOrder}
+        genericChatAvailable={genericChatAvailable}
       />
 
       <HomeScreen

@@ -12,6 +12,7 @@ import type {
   SidebarProjectGroupingMode,
   SidebarThreadSortOrder,
 } from "@t3tools/contracts";
+import { isGenericChatProject } from "@t3tools/shared/genericChat";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -142,7 +143,7 @@ function deriveEmptyState(props: {
 
   return {
     title: "No threads yet",
-    detail: "Create a task to start a new coding session in one of your connected projects.",
+    detail: "Start a general chat or create a coding task in one of your connected projects.",
     loading: false,
   };
 }
@@ -258,6 +259,9 @@ export function HomeScreen(props: HomeScreenProps) {
   const projectCwdByKey = useMemo(() => {
     const map = new Map<string, string>();
     for (const project of props.projects) {
+      if (isGenericChatProject(project)) {
+        continue;
+      }
       map.set(scopedProjectKey(project.environmentId, project.id), project.workspaceRoot);
     }
     return map;
@@ -429,10 +433,10 @@ export function HomeScreen(props: HomeScreenProps) {
     ) : selectedEnvironmentLabel ? (
       <EmptyState
         title={`No threads in ${selectedEnvironmentLabel}`}
-        detail="Choose another environment or create a new task."
+        detail="Choose another environment or start a new chat or task."
       />
     ) : (
-      <EmptyState title="No threads yet" detail="Create a task to start a new coding session." />
+      <EmptyState title="No threads yet" detail="Start a new chat or coding task." />
     )
   ) : null;
 

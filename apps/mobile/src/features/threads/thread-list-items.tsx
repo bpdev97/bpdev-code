@@ -4,6 +4,7 @@ import type {
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
 import type { MenuAction } from "@react-native-menu/menu";
+import { isGenericChatProject } from "@t3tools/shared/genericChat";
 import { SymbolView } from "expo-symbols";
 import { memo, useCallback, useMemo, type ComponentProps } from "react";
 import { Pressable, useColorScheme, useWindowDimensions, View } from "react-native";
@@ -88,6 +89,9 @@ export const ThreadListGroupHeader = memo(function ThreadListGroupHeader(props: 
   const { groupKey, onGroupAction, onNewThread } = props;
   const newThreadTarget = props.newThreadTarget ?? null;
   const compact = props.variant === "compact";
+  const isGenericChat = isGenericChatProject(props.project);
+  const collapseAction = props.collapsed ? "Expands" : "Collapses";
+  const collapseTarget = isGenericChat ? "chats" : "the project";
   const handleToggle = useCallback(
     () => onGroupAction(groupKey, "toggle-collapsed"),
     [groupKey, onGroupAction],
@@ -122,19 +126,28 @@ export const ThreadListGroupHeader = memo(function ThreadListGroupHeader(props: 
         accessibilityRole="button"
         accessibilityState={{ expanded: !props.collapsed }}
         accessibilityLabel={`${props.title}, ${props.threadCount} threads`}
-        accessibilityHint={props.collapsed ? "Expands the project" : "Collapses the project"}
+        accessibilityHint={`${collapseAction} ${collapseTarget}`}
         className={
           compact ? "flex-1 flex-row items-center gap-2.5" : "flex-1 flex-row items-center gap-2"
         }
         hitSlop={{ ...verticalHitSlop, left: compact ? 20 : 12 }}
         onPress={handleToggle}
       >
-        <ProjectFavicon
-          environmentId={props.project.environmentId}
-          size={compact ? 22 : 18}
-          projectTitle={props.project.title}
-          workspaceRoot={props.project.workspaceRoot}
-        />
+        {isGenericChat ? (
+          <SymbolView
+            name="bubble.left.and.bubble.right"
+            size={compact ? 22 : 18}
+            tintColor={iconMutedColor}
+            type="monochrome"
+          />
+        ) : (
+          <ProjectFavicon
+            environmentId={props.project.environmentId}
+            size={compact ? 22 : 18}
+            projectTitle={props.project.title}
+            workspaceRoot={props.project.workspaceRoot}
+          />
+        )}
         <Text
           className={
             compact
@@ -157,7 +170,9 @@ export const ThreadListGroupHeader = memo(function ThreadListGroupHeader(props: 
       </Pressable>
       {showNewThreadButton ? (
         <Pressable
-          accessibilityLabel={`Create new thread in ${props.title}`}
+          accessibilityLabel={
+            isGenericChat ? "Create new chat" : `Create new thread in ${props.title}`
+          }
           accessibilityRole="button"
           hitSlop={{ ...verticalHitSlop, left: 10, right: 14 }}
           onPress={handleNewThread}

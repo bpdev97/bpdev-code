@@ -22,7 +22,7 @@ export function useSelectedThreadGitState() {
   );
   const gitActionState = useVcsActionState(selectedThreadGitTarget);
   const sourceControlDiscovery = useEnvironmentQuery(
-    selectedThread === null
+    selectedThread === null || selectedThreadCwd === null
       ? null
       : sourceControlEnvironment.discovery({
           environmentId: selectedThread.environmentId,
@@ -33,10 +33,10 @@ export function useSelectedThreadGitState() {
   const selectedThreadBranchTarget = useMemo(
     () => ({
       environmentId: selectedThread?.environmentId ?? null,
-      cwd: selectedThreadProject?.workspaceRoot ?? null,
+      cwd: selectedThreadCwd === null ? null : (selectedThreadProject?.workspaceRoot ?? null),
       query: null,
     }),
-    [selectedThread?.environmentId, selectedThreadProject?.workspaceRoot],
+    [selectedThread?.environmentId, selectedThreadCwd, selectedThreadProject?.workspaceRoot],
   );
   const selectedThreadBranchState = useBranches(selectedThreadBranchTarget);
   const selectedThreadBranches = useMemo(
