@@ -35,6 +35,14 @@ import { makeRelayDeviceRegistrationRequest, resolveApsEnvironment } from "./reg
 
 const REMOTE_ACTIVITY_REGISTRATION_RETRY_MS = 15_000;
 
+function resolveMobileUrlScheme(): string {
+  const configuredScheme = Constants.expoConfig?.scheme;
+  if (Array.isArray(configuredScheme)) {
+    return configuredScheme[0] ?? "bpdev-code";
+  }
+  return configuredScheme ?? "bpdev-code";
+}
+
 const AgentAwarenessOperation = Schema.Literals([
   "read-notification-permissions",
   "read-native-push-token",
@@ -479,10 +487,11 @@ function armAgentAwarenessLiveActivityForLocalWorkNow(input: {
     }
     const nowIso = new Date(Date.now()).toISOString();
     const activity = AgentActivity.start({
-      title: "T3 Code",
+      title: Constants.expoConfig?.name ?? "bpdev code",
       subtitle: "Agent work in progress",
       activeCount: 1,
       updatedAt: nowIso,
+      urlScheme: resolveMobileUrlScheme(),
       activities: [
         {
           environmentId: "",
@@ -1074,6 +1083,7 @@ export function refreshActiveLiveActivityRemoteRegistration(): Effect.Effect<
                 activeCount: aggregate.activeCount,
                 updatedAt: aggregate.updatedAt,
                 activities: aggregate.activities,
+                urlScheme: resolveMobileUrlScheme(),
               }),
             catch: (cause) =>
               new AgentAwarenessOperationError({
