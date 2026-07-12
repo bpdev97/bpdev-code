@@ -278,19 +278,80 @@ describe("buildThreadFeed", () => {
 
     const feed = buildThreadFeed(thread);
     const collapsed = deriveThreadFeedPresentation(feed, thread.latestTurn, new Set());
-    expect(collapsed.map((entry) => entry.id)).toEqual(["turn-fold:turn-1", "assistant-final"]);
+    expect(collapsed.map((entry) => entry.id)).toEqual([
+      "turn-fold:response:turn-1:prelude",
+      "assistant-final",
+    ]);
     expect(collapsed[0]).toMatchObject({
       type: "turn-fold",
       label: "Worked for 17s",
       expanded: false,
     });
 
-    const expanded = deriveThreadFeedPresentation(feed, thread.latestTurn, new Set([turnId]));
+    const expanded = deriveThreadFeedPresentation(
+      feed,
+      thread.latestTurn,
+      new Set(["response:turn-1:prelude"]),
+    );
     expect(expanded.map((entry) => entry.id)).toEqual([
-      "turn-fold:turn-1",
+      "turn-fold:response:turn-1:prelude",
       "assistant-commentary",
       "tool-completed",
       "assistant-final",
+    ]);
+  });
+
+  it("keeps follow-up answers separate when they share a provider turn", () => {
+    const turnId = TurnId.make("turn-steered");
+    const message = (
+      id: string,
+      role: "user" | "assistant",
+      text: string,
+      createdAt: string,
+    ): OrchestrationThread["messages"][number] => ({
+      id: MessageId.make(id),
+      role,
+      text,
+      turnId: role === "assistant" ? turnId : null,
+      streaming: false,
+      createdAt,
+      updatedAt: createdAt,
+    });
+    const thread = makeThread({
+      id: ThreadId.make("thread-steered-responses"),
+      projectId: ProjectId.make("project-1"),
+      title: "Steered responses",
+      latestTurn: {
+        turnId,
+        state: "completed",
+        requestedAt: "2026-04-01T00:00:00.000Z",
+        startedAt: "2026-04-01T00:00:00.000Z",
+        completedAt: "2026-04-01T00:00:07.000Z",
+        assistantMessageId: MessageId.make("answer-2"),
+      },
+      messages: [
+        message("user-1", "user", "First question", "2026-04-01T00:00:00.000Z"),
+        message("commentary-1", "assistant", "Checking first", "2026-04-01T00:00:01.000Z"),
+        message("answer-1", "assistant", "First answer", "2026-04-01T00:00:02.000Z"),
+        message("user-2", "user", "Follow-up", "2026-04-01T00:00:04.000Z"),
+        message("commentary-2", "assistant", "Checking next", "2026-04-01T00:00:05.000Z"),
+        message("answer-2", "assistant", "Follow-up answer", "2026-04-01T00:00:06.000Z"),
+      ],
+    });
+
+    const presented = deriveThreadFeedPresentation(
+      buildThreadFeed(thread),
+      thread.latestTurn,
+      new Set(),
+    );
+
+    expect(presented.map((entry) => entry.id)).toEqual([
+      "user-1",
+      "turn-fold:response:turn-steered:user-1",
+      "answer-1",
+      "user-2",
+      "turn-fold:response:turn-steered:user-2",
+      "answer-2",
     ]);
   });
 

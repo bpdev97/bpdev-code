@@ -179,6 +179,10 @@
       "types": "./src/genericChat.ts",
       "import": "./src/genericChat.ts"
     },
+    "./threadResponseGrouping": {
+      "types": "./src/threadResponseGrouping.ts",
+      "import": "./src/threadResponseGrouping.ts"
+    },
     "./hostProcess": {
       "types": "./src/hostProcess.ts",
       "import": "./src/hostProcess.ts"

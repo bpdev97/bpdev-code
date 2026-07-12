@@ -278,9 +278,8 @@ export function AdaptiveWorkspaceLayout(props: {
       ? null
       : scopedThreadKey(selectedThreadRef.environmentId, selectedThreadRef.threadId);
   const activeThreadShell = useThreadShell(selectedThreadRef);
-  const activeThreadIsGenericChat = activeThreadShell
-    ? isGenericChatProjectId(activeThreadShell.projectId)
-    : false;
+  const activeThreadSupportsProjectTools =
+    activeThreadShell !== null && !isGenericChatProjectId(activeThreadShell.projectId);
   const { genericChatAvailable, startGenericChat } = useStartGenericChat(
     selectedThreadRef?.environmentId ?? null,
   );
@@ -358,7 +357,7 @@ export function AdaptiveWorkspaceLayout(props: {
       !layout.usesSplitView ||
       !fileInspector.supported ||
       activeThread === null ||
-      activeThreadIsGenericChat
+      !activeThreadSupportsProjectTools
     ) {
       return false;
     }
@@ -369,7 +368,7 @@ export function AdaptiveWorkspaceLayout(props: {
     navigation.navigate("ThreadFiles", activeThread);
     return true;
   }, [
-    activeThreadIsGenericChat,
+    activeThreadSupportsProjectTools,
     fileInspector.supported,
     layout.usesSplitView,
     pathname,

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { isGenericChatProject } from "@t3tools/shared/genericChat";
+import { isGenericChatThread } from "@t3tools/shared/genericChat";
 
 import { useSelectedThreadDetail } from "./use-thread-detail";
 import { useThreadSelection } from "./use-thread-selection";
@@ -8,7 +8,7 @@ import { resolvePreferredThreadWorktreePath } from "../features/terminal/termina
 export function useSelectedThreadWorktree() {
   const { selectedThread, selectedThreadProject } = useThreadSelection();
   const selectedThreadDetail = useSelectedThreadDetail();
-  const isGenericChat = isGenericChatProject(selectedThreadProject);
+  const isGenericChat = isGenericChatThread(selectedThread);
 
   const selectedThreadWorktreePath = useMemo(
     () =>

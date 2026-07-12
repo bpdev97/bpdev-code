@@ -1,13 +1,16 @@
-import { ApprovalRequestId, isToolLifecycleItemType } from "@t3tools/contracts";
+import { ApprovalRequestId, isToolLifecycleItemType, TurnId } from "@t3tools/contracts";
 import type {
   OrchestrationLatestTurn,
   OrchestrationThread,
   OrchestrationThreadActivity,
   ToolLifecycleItemType,
-  TurnId,
   UserInputQuestion,
 } from "@t3tools/contracts";
-import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+import {
+  deriveThreadResponseGrouping,
+  type ThreadResponseGrouping,
+  type ThreadResponseGroupingEntry,
+} from "@t3tools/shared/threadResponseGrouping";
 
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
@@ -119,6 +122,7 @@ export type ThreadFeedEntry =
       readonly type: "turn-fold";
       readonly id: string;
       readonly createdAt: string;
+      readonly responseId: string;
       readonly turnId: TurnId;
       readonly label: string;
       readonly expanded: boolean;
@@ -963,156 +967,48 @@ function groupAdjacentActivities(entries: ReadonlyArray<RawThreadFeedEntry>): Th
   return grouped;
 }
 
-function computeElapsedMs(startIso: string, endIso: string): number | null {
-  const start = Date.parse(startIso);
-  const end = Date.parse(endIso);
-  if (!Number.isFinite(start) || !Number.isFinite(end)) {
-    return null;
-  }
-  return Math.max(0, end - start);
-}
-
-function maxIsoTimestamp(a: string | null, b: string | null): string | null {
-  if (a === null) return b;
-  if (b === null) return a;
-  const aMs = Date.parse(a);
-  const bMs = Date.parse(b);
-  if (!Number.isFinite(aMs)) return b;
-  if (!Number.isFinite(bMs)) return a;
-  return bMs > aMs ? b : a;
-}
-
-function deriveUnsettledTurnId(latestTurn: ThreadFeedLatestTurn | null): TurnId | null {
-  if (!latestTurn) {
-    return null;
-  }
-  const settled = latestTurn.completedAt !== null && latestTurn.state !== "running";
-  return settled ? null : latestTurn.turnId;
-}
-
-interface ThreadFeedTurnFold {
-  readonly turnId: TurnId;
-  readonly createdAt: string;
-  readonly hiddenEntryIds: ReadonlySet<string>;
-  readonly label: string;
-}
-
-function deriveThreadFeedTurnFolds(
+export function deriveThreadFeedResponseGrouping(
   feed: ReadonlyArray<ThreadFeedEntry>,
   latestTurn: ThreadFeedLatestTurn | null,
-): ReadonlyMap<string, ThreadFeedTurnFold> {
-  const terminalAssistantMessageIdByTurn = new Map<TurnId, string>();
-  for (const entry of feed) {
-    if (entry.type === "message" && entry.message.role === "assistant" && entry.message.turnId) {
-      terminalAssistantMessageIdByTurn.set(entry.message.turnId, entry.id);
+): ThreadResponseGrouping {
+  const entries = feed.flatMap<ThreadResponseGroupingEntry>((entry) => {
+    if (entry.type === "activity-group") {
+      return [{ kind: "work", id: entry.id, createdAt: entry.createdAt, turnId: entry.turnId }];
     }
-  }
+    if (entry.type !== "message" || entry.message.role === "system") {
+      return [];
+    }
+    if (entry.message.role === "user") {
+      return [{ kind: "user", id: entry.id, createdAt: entry.createdAt }];
+    }
+    return [
+      {
+        kind: "assistant",
+        id: entry.id,
+        createdAt: entry.createdAt,
+        updatedAt: entry.message.updatedAt,
+        turnId: entry.message.turnId,
+        streaming: entry.message.streaming,
+      },
+    ];
+  });
 
-  interface TurnGroup {
-    readonly entries: ThreadFeedEntry[];
-    readonly startBoundary: string | null;
-  }
-  const groupsByTurnId = new Map<TurnId, TurnGroup>();
-  let pendingUserBoundary: string | null = null;
-  for (const entry of feed) {
-    if (entry.type === "message" && entry.message.role === "user") {
-      pendingUserBoundary = entry.message.createdAt;
-      continue;
-    }
-    const turnId =
-      entry.type === "message" && entry.message.role === "assistant"
-        ? entry.message.turnId
-        : entry.type === "activity-group"
-          ? entry.turnId
-          : null;
-    if (!turnId) {
-      continue;
-    }
-    let group = groupsByTurnId.get(turnId);
-    if (!group) {
-      group = {
-        entries: [],
-        startBoundary: pendingUserBoundary,
-      };
-      pendingUserBoundary = null;
-      groupsByTurnId.set(turnId, group);
-    }
-    group.entries.push(entry);
-  }
-
-  const unsettledTurnId = deriveUnsettledTurnId(latestTurn);
-  const foldsByAnchorId = new Map<string, ThreadFeedTurnFold>();
-  for (const [turnId, group] of groupsByTurnId) {
-    const { entries } = group;
-    if (turnId === unsettledTurnId) {
-      continue;
-    }
-    if (entries.some((entry) => entry.type === "message" && entry.message.streaming)) {
-      continue;
-    }
-
-    const terminalAssistantMessageId = terminalAssistantMessageIdByTurn.get(turnId);
-    const hiddenEntryIds = new Set(
-      entries.filter((entry) => entry.id !== terminalAssistantMessageId).map((entry) => entry.id),
-    );
-    if (hiddenEntryIds.size === 0) {
-      continue;
-    }
-
-    const firstEntry = entries[0];
-    const lastEntry = entries.at(-1);
-    if (!firstEntry || !lastEntry) {
-      continue;
-    }
-    const terminalEntry = terminalAssistantMessageId
-      ? entries.find((entry) => entry.id === terminalAssistantMessageId)
-      : null;
-    const latestTurnMatches = latestTurn?.turnId === turnId;
-    const lastEntryEnd =
-      lastEntry.type === "message" ? lastEntry.message.updatedAt : lastEntry.createdAt;
-    const elapsedMs =
-      latestTurnMatches && latestTurn.startedAt && latestTurn.completedAt
-        ? computeElapsedMs(latestTurn.startedAt, latestTurn.completedAt)
-        : computeElapsedMs(
-            group.startBoundary ?? firstEntry.createdAt,
-            maxIsoTimestamp(
-              terminalEntry?.type === "message" ? terminalEntry.message.updatedAt : null,
-              lastEntryEnd,
-            ) ?? lastEntryEnd,
-          );
-    const duration = elapsedMs === null ? null : formatDuration(elapsedMs);
-    const interrupted = latestTurnMatches && latestTurn.state === "interrupted";
-    const label = interrupted
-      ? duration
-        ? `You stopped after ${duration}`
-        : "You stopped this response"
-      : duration
-        ? `Worked for ${duration}`
-        : "Worked";
-
-    foldsByAnchorId.set(firstEntry.id, {
-      turnId,
-      createdAt: firstEntry.createdAt,
-      hiddenEntryIds,
-      label,
-    });
-  }
-  return foldsByAnchorId;
+  return deriveThreadResponseGrouping({ entries, latestTurn });
 }
 
 export function deriveThreadFeedPresentation(
   feed: ReadonlyArray<ThreadFeedEntry>,
   latestTurn: ThreadFeedLatestTurn | null,
-  expandedTurnIds: ReadonlySet<TurnId>,
+  expandedResponseIds: ReadonlySet<string>,
   expandedWorkGroupIds: ReadonlySet<string> = new Set(),
 ): ThreadFeedEntry[] {
   const sourceFeed = feed.filter(
     (entry) => entry.type !== "turn-fold" && entry.type !== "work-toggle",
   );
-  const foldsByAnchorId = deriveThreadFeedTurnFolds(sourceFeed, latestTurn);
+  const { foldsByAnchorEntryId } = deriveThreadFeedResponseGrouping(sourceFeed, latestTurn);
   const collapsedEntryIds = new Set<string>();
-  for (const fold of foldsByAnchorId.values()) {
-    if (!expandedTurnIds.has(fold.turnId)) {
+  for (const fold of foldsByAnchorEntryId.values()) {
+    if (!expandedResponseIds.has(fold.responseId)) {
       for (const entryId of fold.hiddenEntryIds) {
         collapsedEntryIds.add(entryId);
       }
@@ -1121,15 +1017,16 @@ export function deriveThreadFeedPresentation(
 
   const result: ThreadFeedEntry[] = [];
   for (const entry of sourceFeed) {
-    const fold = foldsByAnchorId.get(entry.id);
+    const fold = foldsByAnchorEntryId.get(entry.id);
     if (fold) {
       result.push({
         type: "turn-fold",
-        id: `turn-fold:${fold.turnId}`,
+        id: `turn-fold:${fold.responseId}`,
         createdAt: fold.createdAt,
-        turnId: fold.turnId,
+        responseId: fold.responseId,
+        turnId: TurnId.make(fold.turnId),
         label: fold.label,
-        expanded: expandedTurnIds.has(fold.turnId),
+        expanded: expandedResponseIds.has(fold.responseId),
       });
     }
     if (!collapsedEntryIds.has(entry.id)) {

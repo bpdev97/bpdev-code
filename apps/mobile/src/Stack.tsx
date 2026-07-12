@@ -30,6 +30,7 @@ import { GitCommitSheet } from "./features/threads/git/GitCommitSheet";
 import { GitConfirmSheet } from "./features/threads/git/GitConfirmSheet";
 import { GitOverviewSheet } from "./features/threads/git/GitOverviewSheet";
 import { ThreadRouteScreen } from "./features/threads/ThreadRouteScreen";
+import { withProjectThreadRouteGuard } from "./features/threads/ProjectThreadRouteGuard";
 import { ConnectionsRouteScreen } from "./features/connection/ConnectionsRouteScreen";
 import { ConnectionsNewRouteScreen } from "./features/connection/ConnectionsNewRouteScreen";
 import { HomeRouteScreen } from "./features/home/HomeRouteScreen";
@@ -50,6 +51,22 @@ import { nativeHeaderScrollEdgeEffects } from "./native/StackHeader";
 import { useThreadOutboxDrain } from "./state/use-thread-outbox-drain";
 
 const HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
+
+const ProjectThreadTerminalRouteScreen = withProjectThreadRouteGuard(
+  ThreadTerminalRouteScreen,
+  "Terminal",
+);
+const ProjectReviewSheet = withProjectThreadRouteGuard(ReviewSheet, "Review");
+const ProjectReviewCommentComposerSheet = withProjectThreadRouteGuard(
+  ReviewCommentComposerSheet,
+  "Review comments",
+);
+const ProjectThreadFilesTreeScreen = withProjectThreadRouteGuard(ThreadFilesTreeScreen, "Files");
+const ProjectThreadFileScreen = withProjectThreadRouteGuard(ThreadFileScreen, "Files");
+const ProjectGitOverviewSheet = withProjectThreadRouteGuard(GitOverviewSheet, "Git");
+const ProjectGitCommitSheet = withProjectThreadRouteGuard(GitCommitSheet, "Git");
+const ProjectGitBranchesSheet = withProjectThreadRouteGuard(GitBranchesSheet, "Git");
+const ProjectGitConfirmSheet = withProjectThreadRouteGuard(GitConfirmSheet, "Git");
 
 // Matches --color-sheet in global.css (light/dark). DynamicColorIOS lets the header
 // background stay STATIC config while still adapting to appearance changes.
@@ -343,17 +360,17 @@ export const RootStack = createNativeStackNavigator({
       options: GLASS_HEADER_OPTIONS,
     }),
     ThreadTerminal: createNativeStackScreen({
-      screen: ThreadTerminalRouteScreen,
+      screen: ProjectThreadTerminalRouteScreen,
       linking: `${THREAD_LINKING_PREFIX}/terminal`,
       options: SOLID_HEADER_OPTIONS,
     }),
     ThreadReview: createNativeStackScreen({
-      screen: ReviewSheet,
+      screen: ProjectReviewSheet,
       linking: `${THREAD_LINKING_PREFIX}/review`,
       options: SOLID_HEADER_OPTIONS,
     }),
     ThreadReviewComment: createNativeStackScreen({
-      screen: ReviewCommentComposerSheet,
+      screen: ProjectReviewCommentComposerSheet,
       linking: `${THREAD_LINKING_PREFIX}/review-comment`,
       options: {
         presentation: "formSheet",
@@ -362,7 +379,7 @@ export const RootStack = createNativeStackNavigator({
       },
     }),
     ThreadFiles: createNativeStackScreen({
-      screen: ThreadFilesTreeScreen,
+      screen: ProjectThreadFilesTreeScreen,
       linking: `${THREAD_LINKING_PREFIX}/files`,
       options: {
         ...GLASS_HEADER_OPTIONS,
@@ -374,12 +391,12 @@ export const RootStack = createNativeStackNavigator({
       },
     }),
     ThreadFile: createNativeStackScreen({
-      screen: ThreadFileScreen,
+      screen: ProjectThreadFileScreen,
       linking: `${THREAD_LINKING_PREFIX}/files/:path*`,
       options: SOLID_HEADER_OPTIONS,
     }),
     GitOverview: createNativeStackScreen({
-      screen: GitOverviewSheet,
+      screen: ProjectGitOverviewSheet,
       linking: `${THREAD_LINKING_PREFIX}/git`,
       options: {
         presentation: "formSheet",
@@ -388,7 +405,7 @@ export const RootStack = createNativeStackNavigator({
       },
     }),
     GitCommit: createNativeStackScreen({
-      screen: GitCommitSheet,
+      screen: ProjectGitCommitSheet,
       linking: `${THREAD_LINKING_PREFIX}/git/commit`,
       options: {
         presentation: "formSheet",
@@ -397,7 +414,7 @@ export const RootStack = createNativeStackNavigator({
       },
     }),
     GitBranches: createNativeStackScreen({
-      screen: GitBranchesSheet,
+      screen: ProjectGitBranchesSheet,
       linking: `${THREAD_LINKING_PREFIX}/git/branches`,
       options: {
         presentation: "formSheet",
@@ -406,7 +423,7 @@ export const RootStack = createNativeStackNavigator({
       },
     }),
     GitConfirm: createNativeStackScreen({
-      screen: GitConfirmSheet,
+      screen: ProjectGitConfirmSheet,
       linking: `${THREAD_LINKING_PREFIX}/git-confirm`,
       options: {
         presentation: "formSheet",

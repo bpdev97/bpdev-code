@@ -191,6 +191,7 @@ import {
   isContextMenuPointerDown,
   isTrailingDoubleClick,
   resolveProjectStatusIndicator,
+  resolvePinnedCollapsedThread,
   resolveSidebarNewThreadSeedContext,
   resolveSidebarNewThreadEnvMode,
   resolveSidebarStageBadgeLabel,
@@ -1286,18 +1287,17 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       visibleProjectThreads,
     };
   }, [projectThreads, threadLastVisitedAts, threadSortOrder]);
-  const pinnedCollapsedThread = useMemo(() => {
-    const activeThreadKey = activeRouteThreadKey ?? undefined;
-    if (!activeThreadKey || projectExpanded) {
-      return null;
-    }
-    return (
-      visibleProjectThreads.find(
-        (thread) =>
-          scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) === activeThreadKey,
-      ) ?? null
-    );
-  }, [activeRouteThreadKey, projectExpanded, visibleProjectThreads]);
+  const pinnedCollapsedThread = useMemo(
+    () =>
+      resolvePinnedCollapsedThread({
+        projectId: project.id,
+        projectExpanded,
+        activeThreadKey: activeRouteThreadKey,
+        threads: visibleProjectThreads,
+        threadKey: (thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+      }),
+    [activeRouteThreadKey, project.id, projectExpanded, visibleProjectThreads],
+  );
 
   const {
     hasOverflowingThreads,
@@ -3485,15 +3485,13 @@ export default function Sidebar() {
           projectExpandedById,
           projectExpansionPreferenceKeys(project),
         );
-        const activeThreadKey = routeThreadKey ?? undefined;
-        const pinnedCollapsedThread =
-          !projectExpanded && activeThreadKey
-            ? (projectThreads.find(
-                (thread) =>
-                  scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) ===
-                  activeThreadKey,
-              ) ?? null)
-            : null;
+        const pinnedCollapsedThread = resolvePinnedCollapsedThread({
+          projectId: project.id,
+          projectExpanded,
+          activeThreadKey: routeThreadKey,
+          threads: projectThreads,
+          threadKey: (thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+        });
         const shouldShowThreadPanel = projectExpanded || pinnedCollapsedThread !== null;
         if (!shouldShowThreadPanel) {
           return [];

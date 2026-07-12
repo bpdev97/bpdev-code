@@ -67,6 +67,7 @@ import { DiffStatLabel, hasNonZeroStat } from "./DiffStatLabel";
 import { MessageCopyButton } from "./MessageCopyButton";
 import {
   computeStableMessagesTimelineRows,
+  deriveMessagesTimelineResponseGrouping,
   deriveMessagesTimelineRows,
   normalizeCompactToolLabel,
   resolveAssistantMessageCopyState,
@@ -132,7 +133,7 @@ interface TimelineRowSharedState {
   onRevertUserMessage: (messageId: MessageId) => void;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
-  onToggleTurnFold: (turnId: TurnId) => void;
+  onToggleTurnFold: (responseId: string) => void;
   onToggleWorkGroup: (groupId: string, anchorElement?: HTMLElement) => void;
 }
 
@@ -213,17 +214,17 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onIsAtEndChange,
   onManualNavigation,
 }: MessagesTimelineProps) {
-  const [expandedTurnIds, setExpandedTurnIds] = useState<ReadonlySet<TurnId>>(new Set());
+  const [expandedResponseIds, setExpandedResponseIds] = useState<ReadonlySet<string>>(new Set());
   const [expandedWorkGroupIds, setExpandedWorkGroupIds] = useState<ReadonlySet<string>>(new Set());
   const [minimapStripMap] = useState(() => new Map<string, HTMLSpanElement>());
 
-  const onToggleTurnFold = useCallback((turnId: TurnId) => {
-    setExpandedTurnIds((existing) => {
+  const onToggleTurnFold = useCallback((responseId: string) => {
+    setExpandedResponseIds((existing) => {
       const next = new Set(existing);
-      if (next.has(turnId)) {
-        next.delete(turnId);
+      if (next.has(responseId)) {
+        next.delete(responseId);
       } else {
-        next.add(turnId);
+        next.add(responseId);
       }
       return next;
     });
@@ -262,8 +263,18 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     [listRef],
   );
 
-  // An in-session interrupt leaves its turn expanded so the user keeps their
-  // place; the next turn (or a reload, since this is local state) folds it.
+  const responseGrouping = useMemo(
+    () =>
+      deriveMessagesTimelineResponseGrouping({
+        timelineEntries,
+        latestTurn,
+        runningTurnId,
+      }),
+    [latestTurn, runningTurnId, timelineEntries],
+  );
+
+  // An in-session interrupt leaves its response groups expanded so the user
+  // keeps their place; the next turn folds those groups again.
   const previousLatestTurnRef = useRef(latestTurn);
   useEffect(() => {
     const previous = previousLatestTurnRef.current;
@@ -273,23 +284,29 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     }
     if (latestTurn.turnId === previous.turnId) {
       if (previous.state === "running" && latestTurn.state === "interrupted") {
-        setExpandedTurnIds((existing) => {
+        const responseIds = responseGrouping.responseIdsByTurnId.get(latestTurn.turnId) ?? [];
+        setExpandedResponseIds((existing) => {
           const next = new Set(existing);
-          next.add(latestTurn.turnId);
+          for (const responseId of responseIds) {
+            next.add(responseId);
+          }
           return next;
         });
       }
       return;
     }
-    setExpandedTurnIds((existing) => {
-      if (!existing.has(previous.turnId)) {
+    const previousResponseIds = responseGrouping.responseIdsByTurnId.get(previous.turnId) ?? [];
+    setExpandedResponseIds((existing) => {
+      if (!previousResponseIds.some((responseId) => existing.has(responseId))) {
         return existing;
       }
       const next = new Set(existing);
-      next.delete(previous.turnId);
+      for (const responseId of previousResponseIds) {
+        next.delete(responseId);
+      }
       return next;
     });
-  }, [latestTurn]);
+  }, [latestTurn, responseGrouping.responseIdsByTurnId]);
 
   const rawRows = useMemo(
     () =>
@@ -297,7 +314,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         timelineEntries,
         latestTurn,
         runningTurnId,
-        expandedTurnIds,
+        expandedResponseIds,
         expandedWorkGroupIds,
         isWorking,
         activeTurnStartedAt,
@@ -308,7 +325,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       timelineEntries,
       latestTurn,
       runningTurnId,
-      expandedTurnIds,
+      expandedResponseIds,
       expandedWorkGroupIds,
       isWorking,
       activeTurnStartedAt,
@@ -964,7 +981,7 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
         type="button"
         aria-expanded={row.expanded}
         data-scroll-anchor-ignore
-        onClick={() => ctx.onToggleTurnFold(row.turnId)}
+        onClick={() => ctx.onToggleTurnFold(row.responseId)}
         className="flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-xs text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
       >
         <span>{row.label}</span>

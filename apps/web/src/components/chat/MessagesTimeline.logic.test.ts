@@ -307,7 +307,7 @@ describe("deriveMessagesTimelineRows", () => {
           },
         },
       ],
-      expandedTurnIds: new Set(["turn-1" as never]),
+      expandedResponseIds: new Set(["response:turn-1:user-1-entry"]),
       isWorking: false,
       activeTurnStartedAt: null,
       turnDiffSummaryByAssistantMessageId: new Map(),
@@ -516,13 +516,13 @@ describe("deriveMessagesTimelineRows", () => {
     expect(foldRow?.label).toBe("Worked for 22s");
     expect(collapsedRows.map((row) => row.id)).toEqual([
       "user-entry",
-      "turn-fold:turn-1",
+      "turn-fold:response:turn-1:user-entry",
       "assistant-final-entry",
     ]);
 
     const expandedRows = deriveMessagesTimelineRows({
       timelineEntries,
-      expandedTurnIds: new Set(["turn-1" as never]),
+      expandedResponseIds: new Set(["response:turn-1:user-entry"]),
       isWorking: false,
       activeTurnStartedAt: null,
       turnDiffSummaryByAssistantMessageId: new Map(),
@@ -531,7 +531,7 @@ describe("deriveMessagesTimelineRows", () => {
 
     expect(expandedRows.map((row) => row.id)).toEqual([
       "user-entry",
-      "turn-fold:turn-1",
+      "turn-fold:response:turn-1:user-entry",
       "assistant-thought-entry",
       "work-entry-1",
       "assistant-final-entry",
@@ -539,6 +539,119 @@ describe("deriveMessagesTimelineRows", () => {
     expect(
       expandedRows.find((row) => row.kind === "turn-fold" && row.expanded === true),
     ).toBeDefined();
+  });
+
+  it("keeps follow-up answers separate when they share a provider turn", () => {
+    const turnId = "turn-steered" as never;
+    const timelineEntries = [
+      {
+        id: "user-1-entry",
+        kind: "message" as const,
+        createdAt: "2026-01-01T00:00:00Z",
+        message: {
+          id: "user-1" as never,
+          role: "user" as const,
+          text: "First question",
+          turnId: null,
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+          streaming: false,
+        },
+      },
+      {
+        id: "commentary-1-entry",
+        kind: "message" as const,
+        createdAt: "2026-01-01T00:00:01Z",
+        message: {
+          id: "commentary-1" as never,
+          role: "assistant" as const,
+          text: "Checking the first question.",
+          turnId,
+          createdAt: "2026-01-01T00:00:01Z",
+          updatedAt: "2026-01-01T00:00:01Z",
+          streaming: false,
+        },
+      },
+      {
+        id: "answer-1-entry",
+        kind: "message" as const,
+        createdAt: "2026-01-01T00:00:02Z",
+        message: {
+          id: "answer-1" as never,
+          role: "assistant" as const,
+          text: "First answer",
+          turnId,
+          createdAt: "2026-01-01T00:00:02Z",
+          updatedAt: "2026-01-01T00:00:03Z",
+          streaming: false,
+        },
+      },
+      {
+        id: "user-2-entry",
+        kind: "message" as const,
+        createdAt: "2026-01-01T00:00:04Z",
+        message: {
+          id: "user-2" as never,
+          role: "user" as const,
+          text: "Follow-up",
+          turnId: null,
+          createdAt: "2026-01-01T00:00:04Z",
+          updatedAt: "2026-01-01T00:00:04Z",
+          streaming: false,
+        },
+      },
+      {
+        id: "commentary-2-entry",
+        kind: "message" as const,
+        createdAt: "2026-01-01T00:00:05Z",
+        message: {
+          id: "commentary-2" as never,
+          role: "assistant" as const,
+          text: "Checking the follow-up.",
+          turnId,
+          createdAt: "2026-01-01T00:00:05Z",
+          updatedAt: "2026-01-01T00:00:05Z",
+          streaming: false,
+        },
+      },
+      {
+        id: "answer-2-entry",
+        kind: "message" as const,
+        createdAt: "2026-01-01T00:00:06Z",
+        message: {
+          id: "answer-2" as never,
+          role: "assistant" as const,
+          text: "Follow-up answer",
+          turnId,
+          createdAt: "2026-01-01T00:00:06Z",
+          updatedAt: "2026-01-01T00:00:07Z",
+          streaming: false,
+        },
+      },
+    ];
+
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries,
+      latestTurn: {
+        turnId,
+        state: "completed",
+        startedAt: "2026-01-01T00:00:00Z",
+        completedAt: "2026-01-01T00:00:07Z",
+      },
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    expect(rows.map((row) => row.id)).toEqual([
+      "user-1-entry",
+      "turn-fold:response:turn-steered:user-1-entry",
+      "answer-1-entry",
+      "user-2-entry",
+      "turn-fold:response:turn-steered:user-2-entry",
+      "answer-2-entry",
+    ]);
   });
 
   it("derives a sane duration for a steer-superseded turn with one instant commentary message", () => {
@@ -735,7 +848,7 @@ describe("deriveMessagesTimelineRows", () => {
     });
 
     expect(rows.map((row) => row.id)).toEqual([
-      "turn-fold:turn-1",
+      "turn-fold:response:turn-1:prelude",
       "assistant-final-entry",
       "user-followup-entry",
       "working-indicator-row",
@@ -887,7 +1000,7 @@ describe("deriveMessagesTimelineRows", () => {
           },
         },
       ],
-      expandedTurnIds: new Set(["turn-1" as never]),
+      expandedResponseIds: new Set(["response:turn-1:prelude"]),
       isWorking: false,
       activeTurnStartedAt: null,
       turnDiffSummaryByAssistantMessageId: new Map(),
