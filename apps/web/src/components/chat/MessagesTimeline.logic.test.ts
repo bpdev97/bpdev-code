@@ -307,7 +307,7 @@ describe("deriveMessagesTimelineRows", () => {
           },
         },
       ],
-      expandedResponseIds: new Set(["response:turn-1:user-1-entry"]),
+      expandedResponseIds: new Set(["response:user-1-entry"]),
       isWorking: false,
       activeTurnStartedAt: null,
       turnDiffSummaryByAssistantMessageId: new Map(),
@@ -516,13 +516,13 @@ describe("deriveMessagesTimelineRows", () => {
     expect(foldRow?.label).toBe("Worked for 22s");
     expect(collapsedRows.map((row) => row.id)).toEqual([
       "user-entry",
-      "turn-fold:response:turn-1:user-entry",
+      "turn-fold:response:user-entry",
       "assistant-final-entry",
     ]);
 
     const expandedRows = deriveMessagesTimelineRows({
       timelineEntries,
-      expandedResponseIds: new Set(["response:turn-1:user-entry"]),
+      expandedResponseIds: new Set(["response:user-entry"]),
       isWorking: false,
       activeTurnStartedAt: null,
       turnDiffSummaryByAssistantMessageId: new Map(),
@@ -531,7 +531,7 @@ describe("deriveMessagesTimelineRows", () => {
 
     expect(expandedRows.map((row) => row.id)).toEqual([
       "user-entry",
-      "turn-fold:response:turn-1:user-entry",
+      "turn-fold:response:user-entry",
       "assistant-thought-entry",
       "work-entry-1",
       "assistant-final-entry",
@@ -646,12 +646,90 @@ describe("deriveMessagesTimelineRows", () => {
 
     expect(rows.map((row) => row.id)).toEqual([
       "user-1-entry",
-      "turn-fold:response:turn-steered:user-1-entry",
+      "turn-fold:response:user-1-entry",
       "answer-1-entry",
       "user-2-entry",
-      "turn-fold:response:turn-steered:user-2-entry",
+      "turn-fold:response:user-2-entry",
       "answer-2-entry",
     ]);
+  });
+
+  it("keeps one response when a user send spans multiple provider turns", () => {
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          id: "user-entry",
+          kind: "message",
+          createdAt: "2026-01-01T00:00:00Z",
+          message: {
+            id: "user-1" as never,
+            role: "user",
+            text: "What did we decide?",
+            turnId: null,
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+            streaming: false,
+          },
+        },
+        {
+          id: "commentary-entry",
+          kind: "message",
+          createdAt: "2026-01-01T00:00:01Z",
+          message: {
+            id: "commentary-1" as never,
+            role: "assistant",
+            text: "Checking the earlier answer.",
+            turnId: "turn-1" as never,
+            createdAt: "2026-01-01T00:00:01Z",
+            updatedAt: "2026-01-01T00:00:01Z",
+            streaming: false,
+          },
+        },
+        {
+          id: "work-entry",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:03Z",
+          entry: {
+            id: "work-2",
+            createdAt: "2026-01-01T00:00:03Z",
+            turnId: "turn-2" as never,
+            label: "Looked up context",
+            tone: "tool",
+          },
+        },
+        {
+          id: "answer-entry",
+          kind: "message",
+          createdAt: "2026-01-01T00:00:05Z",
+          message: {
+            id: "answer-2" as never,
+            role: "assistant",
+            text: "Here is the answer.",
+            turnId: "turn-2" as never,
+            createdAt: "2026-01-01T00:00:05Z",
+            updatedAt: "2026-01-01T00:00:06Z",
+            streaming: false,
+          },
+        },
+      ],
+      latestTurn: {
+        turnId: "turn-2" as never,
+        state: "completed",
+        startedAt: "2026-01-01T00:00:02Z",
+        completedAt: "2026-01-01T00:00:06Z",
+      },
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    expect(rows.map((row) => row.id)).toEqual([
+      "user-entry",
+      "turn-fold:response:user-entry",
+      "answer-entry",
+    ]);
+    expect(rows.filter((row) => row.kind === "turn-fold")).toHaveLength(1);
   });
 
   it("derives a sane duration for a steer-superseded turn with one instant commentary message", () => {
@@ -848,7 +926,7 @@ describe("deriveMessagesTimelineRows", () => {
     });
 
     expect(rows.map((row) => row.id)).toEqual([
-      "turn-fold:response:turn-1:prelude",
+      "turn-fold:response:prelude:turn-1",
       "assistant-final-entry",
       "user-followup-entry",
       "working-indicator-row",
@@ -1000,7 +1078,7 @@ describe("deriveMessagesTimelineRows", () => {
           },
         },
       ],
-      expandedResponseIds: new Set(["response:turn-1:prelude"]),
+      expandedResponseIds: new Set(["response:prelude:turn-1"]),
       isWorking: false,
       activeTurnStartedAt: null,
       turnDiffSummaryByAssistantMessageId: new Map(),
