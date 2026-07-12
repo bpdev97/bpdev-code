@@ -1,9 +1,6 @@
 name: bpdev code macOS Release
 
 on:
-  push:
-    tags:
-      - "personal-v*.*.*"
   workflow_dispatch:
     inputs:
       version:
@@ -19,6 +16,7 @@ jobs:
     name: Build and publish macOS arm64
     runs-on: macos-latest
     timeout-minutes: 60
+    environment: personal-release
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -31,12 +29,7 @@ jobs:
         env:
           DISPATCH_VERSION: ${{ inputs.version }}
         run: |
-          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
-            raw="$GITHUB_REF_NAME"
-            version="${raw#personal-v}"
-          else
-            version="${DISPATCH_VERSION#personal-v}"
-          fi
+          version="${DISPATCH_VERSION#personal-v}"
 
           if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Personal macOS versions must use X.Y.Z: $version" >&2
