@@ -7,6 +7,7 @@ import {
   GENERIC_CHAT_PROJECT_ID,
   isGenericChatProject,
   isGenericChatProjectId,
+  isGenericChatThread,
 } from "./genericChat.ts";
 
 describe("generic chat", () => {
@@ -15,6 +16,9 @@ describe("generic chat", () => {
     expect(isGenericChatProjectId(ProjectId.make("regular-project"))).toBe(false);
     expect(isGenericChatProject({ id: GENERIC_CHAT_PROJECT_ID })).toBe(true);
     expect(isGenericChatProject(null)).toBe(false);
+    expect(isGenericChatThread({ projectId: GENERIC_CHAT_PROJECT_ID })).toBe(true);
+    expect(isGenericChatThread({ projectId: ProjectId.make("regular-project") })).toBe(false);
+    expect(isGenericChatThread(null)).toBe(false);
   });
 
   it("adds hidden no-filesystem context without changing the stored user message", () => {

@@ -10,6 +10,7 @@ import type { SidebarThreadSummary, Thread } from "../types";
 import { cn } from "../lib/utils";
 import { isLatestTurnSettled } from "../session-logic";
 import { resolveServerBackedAppStageLabel } from "../branding.logic";
+import { isGenericChatProjectId } from "@t3tools/shared/genericChat";
 
 export const THREAD_SELECTION_SAFE_SELECTOR = "[data-thread-item], [data-thread-selection-safe]";
 export const THREAD_JUMP_HINT_SHOW_DELAY_MS = 100;
@@ -281,6 +282,20 @@ export function getVisibleSidebarThreadIds<TThreadId>(
   return renderedProjects.flatMap((renderedProject) =>
     renderedProject.shouldShowThreadPanel === false ? [] : renderedProject.renderedThreadIds,
   );
+}
+
+export function resolvePinnedCollapsedThread<TThread>(input: {
+  readonly projectId: string;
+  readonly projectExpanded: boolean;
+  readonly activeThreadKey: string | null | undefined;
+  readonly threads: ReadonlyArray<TThread>;
+  readonly threadKey: (thread: TThread) => string;
+}): TThread | null {
+  if (input.projectExpanded || !input.activeThreadKey || isGenericChatProjectId(input.projectId)) {
+    return null;
+  }
+
+  return input.threads.find((thread) => input.threadKey(thread) === input.activeThreadKey) ?? null;
 }
 
 export function getSidebarThreadIdsToPrewarm<TThreadId>(

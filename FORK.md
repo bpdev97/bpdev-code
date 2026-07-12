@@ -67,6 +67,7 @@ Fork-owned paths:
 - `apps/server/src/genericChat.ts`
 - focused `genericChat.test.ts` files
 - `apps/mobile/src/features/threads/use-start-generic-chat.ts`
+- `apps/mobile/src/features/threads/ProjectThreadRouteGuard.tsx`
 - `docs/fork/generic-chat.md`
 
 Shared upstream touchpoints containing additive generic-chat behavior:

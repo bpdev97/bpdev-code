@@ -37,9 +37,11 @@ Generic-chat threads do not expose project-only affordances:
 - new-chat drafts use the local workspace mode with no branch, worktree, or origin selection;
 - runtime selection is fixed by the server even if stale client metadata says otherwise.
 
-The mobile working-directory selector is the central capability boundary for existing threads. A
-generic chat returns `null` there, which keeps file, Git, review, and terminal consumers aligned.
-Direct file and terminal routes also reject generic chats so deep links cannot bypass the UI guard.
+The mobile working-directory selector is the central capability boundary for existing threads. It
+derives generic-chat status from the selected thread's reserved project ID, without waiting for the
+project catalog to hydrate. A generic chat returns `null` there, which keeps file, Git, review, and
+terminal consumers aligned. Project-only routes share a thread capability guard so files, Git,
+review, terminal, and their nested routes cannot be opened through deep links or keyboard commands.
 
 ## Compatibility invariants
 
@@ -53,6 +55,8 @@ Direct file and terminal routes also reject generic chats so deep links cannot b
 - Resolve a generic provider session cwd from the managed project only; never honor its thread
   branch or worktree metadata.
 - Never expose the managed scratch directory as a user workspace in web or mobile UI.
+- Derive existing-thread capability from `thread.projectId`; project catalog objects may arrive a
+  render later and must not temporarily enable project tools.
 - Keep normal project behavior unchanged; shared helpers must branch only on the reserved ID.
 
 ## Revalidation procedure

@@ -22,6 +22,12 @@ export function isGenericChatProject(project: { readonly id: string } | null | u
   return project != null && isGenericChatProjectId(project.id);
 }
 
+export function isGenericChatThread(
+  thread: { readonly projectId: string } | null | undefined,
+): boolean {
+  return thread != null && isGenericChatProjectId(thread.projectId);
+}
+
 export function findGenericChatProject<
   T extends { readonly id: string; readonly environmentId: string },
 >(projects: ReadonlyArray<T>, preferredEnvironmentId?: string | null): T | null {

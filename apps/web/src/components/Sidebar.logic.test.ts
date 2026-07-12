@@ -12,6 +12,7 @@ import {
   isTrailingDoubleClick,
   orderItemsByPreferredIds,
   resolveProjectStatusIndicator,
+  resolvePinnedCollapsedThread,
   resolveSidebarNewThreadSeedContext,
   resolveSidebarNewThreadEnvMode,
   resolveSidebarStageBadgeLabel,
@@ -21,6 +22,7 @@ import {
   sortProjectsForSidebar,
   THREAD_JUMP_HINT_SHOW_DELAY_MS,
 } from "./Sidebar.logic";
+import { GENERIC_CHAT_PROJECT_ID } from "@t3tools/shared/genericChat";
 import {
   EnvironmentId,
   OrchestrationLatestTurn,
@@ -529,6 +531,34 @@ describe("getVisibleSidebarThreadIds", () => {
         },
       ]),
     ).toEqual([ThreadId.make("thread-12"), ThreadId.make("thread-11")]);
+  });
+});
+
+describe("resolvePinnedCollapsedThread", () => {
+  const threads = [{ id: "thread-1" }, { id: "thread-2" }];
+
+  it("keeps the active thread visible for a collapsed project", () => {
+    expect(
+      resolvePinnedCollapsedThread({
+        projectId: "project-1",
+        projectExpanded: false,
+        activeThreadKey: "thread-2",
+        threads,
+        threadKey: (thread) => thread.id,
+      }),
+    ).toBe(threads[1]);
+  });
+
+  it("fully collapses Chats even when its active thread is open", () => {
+    expect(
+      resolvePinnedCollapsedThread({
+        projectId: GENERIC_CHAT_PROJECT_ID,
+        projectExpanded: false,
+        activeThreadKey: "thread-2",
+        threads,
+        threadKey: (thread) => thread.id,
+      }),
+    ).toBeNull();
   });
 });
 

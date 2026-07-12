@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import * as Option from "effect/Option";
 import { EnvironmentId, ThreadId, type ProjectScript } from "@t3tools/contracts";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
-import { GENERIC_CHAT_RUNTIME_MODE, isGenericChatProject } from "@t3tools/shared/genericChat";
+import { GENERIC_CHAT_RUNTIME_MODE, isGenericChatThread } from "@t3tools/shared/genericChat";
 import { Platform, Pressable, ScrollView, Text as RNText, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWorkspaceState } from "../../state/workspace";
@@ -187,7 +187,7 @@ function ThreadRouteContent(
   const { onReconnectEnvironment } = useRemoteConnections();
   const { selectedThread, selectedThreadProject, selectedEnvironmentConnection } =
     useThreadSelection();
-  const isGenericChat = isGenericChatProject(selectedThreadProject);
+  const isGenericChat = isGenericChatThread(selectedThread);
   const selectedThreadDetailState = props.selectedThreadDetailState;
   const selectedThreadDetail = Option.getOrNull(selectedThreadDetailState.data);
   const { selectedThreadCwd } = useSelectedThreadWorktree();
@@ -208,7 +208,10 @@ function ThreadRouteContent(
   );
   const inspectorMode = (() => {
     if (inspectorSelection?.routeThreadIdentity === routeThreadIdentity) {
-      if (inspectorSelection.mode === "files" && selectedThreadCwd === null) {
+      if (
+        (inspectorSelection.mode === "files" || inspectorSelection.mode === "git") &&
+        selectedThreadCwd === null
+      ) {
         return null;
       }
       return inspectorSelection.mode;
@@ -336,9 +339,12 @@ function ThreadRouteContent(
   const gitActionProgress = useGitActionProgress(gitActionProgressTarget);
 
   const handleOpenGitInspector = useCallback(() => {
+    if (selectedThreadCwd === null) {
+      return;
+    }
     setInspectorSelection({ routeThreadIdentity, mode: "git" });
     showAuxiliaryPane("inspector");
-  }, [routeThreadIdentity, showAuxiliaryPane]);
+  }, [routeThreadIdentity, selectedThreadCwd, showAuxiliaryPane]);
   const handleOpenFilesInspector = useCallback(() => {
     if (!fileInspector.supported || selectedThread === null || selectedThreadCwd === null) {
       return;

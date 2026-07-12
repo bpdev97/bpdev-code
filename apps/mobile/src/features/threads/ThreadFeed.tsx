@@ -1,7 +1,7 @@
 import * as Haptics from "expo-haptics";
 import { KeyboardAwareLegendList } from "@legendapp/list/keyboard";
 import { type LegendListRef } from "@legendapp/list/react-native";
-import type { EnvironmentId, MessageId, ThreadId, TurnId } from "@t3tools/contracts";
+import type { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
 import { CHAT_LIST_ANCHOR_OFFSET, resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import { SymbolView } from "expo-symbols";
 import { HeaderHeightContext } from "@react-navigation/elements";
@@ -85,6 +85,7 @@ import { useAppearanceCodeSurface } from "../settings/appearance/useAppearanceCo
 import { markdownFileIconSource } from "@t3tools/mobile-markdown-text/file-icons";
 import { resolveMarkdownLinkPresentation } from "@t3tools/mobile-markdown-text/links";
 import {
+  deriveThreadFeedResponseGrouping,
   deriveThreadFeedPresentation,
   type ThreadFeedEntry,
   type ThreadFeedLatestTurn,
@@ -693,11 +694,12 @@ function renderFeedEntry(
     readonly copiedRowId: string | null;
     readonly expandedWorkRows: Record<string, boolean>;
     readonly terminalAssistantMessageIds: ReadonlySet<string>;
-    readonly unsettledTurnId: TurnId | null;
+    readonly activeResponseId: string | null;
+    readonly responseIdByEntryId: ReadonlyMap<string, string>;
     readonly onCopyWorkRow: (rowId: string, value: string) => void;
     readonly onToggleWorkGroup: (groupId: string) => void;
     readonly onToggleWorkRow: (rowId: string) => void;
-    readonly onToggleTurnFold: (turnId: TurnId) => void;
+    readonly onToggleTurnFold: (responseId: string) => void;
     readonly onPressImage: (uri: string, headers?: Record<string, string>) => void;
     readonly onMarkdownLinkPress: (href: string) => void;
     readonly iconSubtleColor: string | import("react-native").ColorValue;
@@ -716,7 +718,7 @@ function renderFeedEntry(
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded: entry.expanded }}
-        onPress={() => props.onToggleTurnFold(entry.turnId)}
+        onPress={() => props.onToggleTurnFold(entry.responseId)}
         hitSlop={4}
         className="mb-3 min-h-11 flex-row items-center gap-2 border-b border-neutral-200/80 px-2 dark:border-white/[0.08]"
       >
@@ -752,14 +754,14 @@ function renderFeedEntry(
     const timestampLabel = formatMessageTime(isUser ? message.createdAt : message.updatedAt);
     const attachments = message.attachments ?? [];
     const hasReviewCommentContext = message.text.includes("<review_comment");
-    const assistantTurnStillInProgress =
+    const assistantResponseStillInProgress =
       message.role === "assistant" &&
-      props.unsettledTurnId !== null &&
-      message.turnId === props.unsettledTurnId;
+      props.activeResponseId !== null &&
+      props.responseIdByEntryId.get(entry.id) === props.activeResponseId;
     const showAssistantMeta =
       message.role === "assistant" &&
       props.terminalAssistantMessageIds.has(message.id) &&
-      !assistantTurnStillInProgress &&
+      !assistantResponseStillInProgress &&
       !message.streaming;
 
     if (isUser) {
@@ -1173,14 +1175,15 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     readonly copiedRowId: string | null;
     readonly expandedWorkGroups: Record<string, boolean>;
     readonly expandedWorkRows: Record<string, boolean>;
-    readonly expandedTurnIds: ReadonlySet<TurnId>;
+    readonly expandedResponseIds: ReadonlySet<string>;
   }>({
     copiedRowId: null,
     expandedWorkGroups: {},
     expandedWorkRows: {},
-    expandedTurnIds: new Set(),
+    expandedResponseIds: new Set(),
   });
-  const { copiedRowId, expandedWorkGroups, expandedWorkRows, expandedTurnIds } = interactionState;
+  const { copiedRowId, expandedWorkGroups, expandedWorkRows, expandedResponseIds } =
+    interactionState;
   const [expandedImage, setExpandedImage] = useState<{
     uri: string;
     headers?: Record<string, string>;
@@ -1308,10 +1311,10 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       deriveThreadFeedPresentation(
         props.feed,
         props.latestTurn,
-        expandedTurnIds,
+        expandedResponseIds,
         expandedWorkGroupIds,
       ),
-    [expandedTurnIds, expandedWorkGroupIds, props.feed, props.latestTurn],
+    [expandedResponseIds, expandedWorkGroupIds, props.feed, props.latestTurn],
   );
 
   // The empty↔filled key below remounts the list, which resets its imperative
@@ -1339,20 +1342,11 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       ),
     [presentedFeed, props.anchorMessageId, anchorTopInset],
   );
-  const terminalAssistantMessageIds = useMemo(() => {
-    const terminalIdsByTurn = new Map<TurnId, string>();
-    for (const entry of props.feed) {
-      if (entry.type === "message" && entry.message.role === "assistant" && entry.message.turnId) {
-        terminalIdsByTurn.set(entry.message.turnId, entry.message.id);
-      }
-    }
-    return new Set(terminalIdsByTurn.values());
-  }, [props.feed]);
-  const unsettledTurnId =
-    props.latestTurn &&
-    (props.latestTurn.completedAt === null || props.latestTurn.state === "running")
-      ? props.latestTurn.turnId
-      : null;
+  const responseGrouping = useMemo(
+    () => deriveThreadFeedResponseGrouping(props.feed, props.latestTurn),
+    [props.feed, props.latestTurn],
+  );
+  const terminalAssistantMessageIds = responseGrouping.terminalAssistantEntryIds;
 
   useEffect(() => {
     const previous = previousLatestTurnRef.current;
@@ -1362,23 +1356,29 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     }
     if (props.latestTurn.turnId === previous.turnId) {
       if (previous.state === "running" && props.latestTurn.state === "interrupted") {
-        const interruptedTurnId = props.latestTurn.turnId;
-        setInteractionState((current) => ({
-          ...current,
-          expandedTurnIds: new Set(current.expandedTurnIds).add(interruptedTurnId),
-        }));
+        const responseIds = responseGrouping.responseIdsByTurnId.get(props.latestTurn.turnId) ?? [];
+        setInteractionState((current) => {
+          const next = new Set(current.expandedResponseIds);
+          for (const responseId of responseIds) {
+            next.add(responseId);
+          }
+          return { ...current, expandedResponseIds: next };
+        });
       }
       return;
     }
+    const previousResponseIds = responseGrouping.responseIdsByTurnId.get(previous.turnId) ?? [];
     setInteractionState((current) => {
-      if (!current.expandedTurnIds.has(previous.turnId)) {
+      if (!previousResponseIds.some((responseId) => current.expandedResponseIds.has(responseId))) {
         return current;
       }
-      const next = new Set(current.expandedTurnIds);
-      next.delete(previous.turnId);
-      return { ...current, expandedTurnIds: next };
+      const next = new Set(current.expandedResponseIds);
+      for (const responseId of previousResponseIds) {
+        next.delete(responseId);
+      }
+      return { ...current, expandedResponseIds: next };
     });
-  }, [props.latestTurn]);
+  }, [props.latestTurn, responseGrouping.responseIdsByTurnId]);
 
   useEffect(() => {
     return () => {
@@ -1473,16 +1473,16 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   );
 
   const onToggleTurnFold = useCallback(
-    (turnId: TurnId) => {
-      suspendEndScrollMaintenanceForDisclosure(`turn-fold:${turnId}`);
+    (responseId: string) => {
+      suspendEndScrollMaintenanceForDisclosure(`turn-fold:${responseId}`);
       setInteractionState((current) => {
-        const next = new Set(current.expandedTurnIds);
-        if (next.has(turnId)) {
-          next.delete(turnId);
+        const next = new Set(current.expandedResponseIds);
+        if (next.has(responseId)) {
+          next.delete(responseId);
         } else {
-          next.add(turnId);
+          next.add(responseId);
         }
-        return { ...current, expandedTurnIds: next };
+        return { ...current, expandedResponseIds: next };
       });
     },
     [suspendEndScrollMaintenanceForDisclosure],
@@ -1497,9 +1497,10 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       renderFeedEntry(info, {
         environmentId: props.environmentId,
         copiedRowId,
+        activeResponseId: responseGrouping.activeResponseId,
         expandedWorkRows,
+        responseIdByEntryId: responseGrouping.responseIdByEntryId,
         terminalAssistantMessageIds,
-        unsettledTurnId,
         onCopyWorkRow,
         onToggleWorkGroup,
         onToggleWorkRow,
@@ -1516,9 +1517,10 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       }),
     [
       copiedRowId,
+      responseGrouping.activeResponseId,
+      responseGrouping.responseIdByEntryId,
       expandedWorkRows,
       terminalAssistantMessageIds,
-      unsettledTurnId,
       iconSubtleColor,
       userBubbleColor,
       markdownStyles,
