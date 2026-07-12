@@ -175,6 +175,10 @@
       "types": "./src/chatList.ts",
       "import": "./src/chatList.ts"
     },
+    "./genericChat": {
+      "types": "./src/genericChat.ts",
+      "import": "./src/genericChat.ts"
+    },
     "./hostProcess": {
       "types": "./src/hostProcess.ts",
       "import": "./src/hostProcess.ts"

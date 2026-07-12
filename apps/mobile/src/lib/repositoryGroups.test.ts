@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  GENERIC_CHAT_LOGICAL_PROJECT_KEY,
+  GENERIC_CHAT_PROJECT_ID,
+  GENERIC_CHAT_PROJECT_TITLE,
+} from "@t3tools/shared/genericChat";
 
 import { groupProjectsByRepository } from "./repositoryGroups";
 import { EnvironmentProject, EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
@@ -42,6 +47,32 @@ function makeThread(
 }
 
 describe("groupProjectsByRepository", () => {
+  it("groups managed chats across environments without treating the scratch path as a repo", () => {
+    const projects = [
+      makeProject({
+        environmentId: EnvironmentId.make("env-local"),
+        id: GENERIC_CHAT_PROJECT_ID,
+        title: GENERIC_CHAT_PROJECT_TITLE,
+        workspaceRoot: "/state/local/workspaces/generic-chat",
+      }),
+      makeProject({
+        environmentId: EnvironmentId.make("env-remote"),
+        id: GENERIC_CHAT_PROJECT_ID,
+        title: GENERIC_CHAT_PROJECT_TITLE,
+        workspaceRoot: "/state/remote/workspaces/generic-chat",
+      }),
+    ];
+
+    const groups = groupProjectsByRepository({ projects, threads: [] });
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({
+      key: GENERIC_CHAT_LOGICAL_PROJECT_KEY,
+      title: GENERIC_CHAT_PROJECT_TITLE,
+      projectCount: 2,
+    });
+  });
+
   it("groups projects across environments by repository identity", () => {
     const repoIdentity = {
       canonicalKey: "github.com/t3tools/t3code",

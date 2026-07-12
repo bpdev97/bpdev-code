@@ -1,5 +1,6 @@
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { StackActions, useNavigation } from "@react-navigation/native";
+import type { MenuAction } from "@react-native-menu/menu";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Alert, InteractionManager, View, useColorScheme } from "react-native";
 import { KeyboardAvoidingView, useKeyboardState } from "react-native-keyboard-controller";
@@ -39,6 +40,7 @@ import { enqueueThreadOutboxMessage, removeThreadOutboxMessage } from "../../sta
 import { useRemoteConnectionStatus } from "../../state/use-remote-environment-registry";
 import { branchBadgeLabel, useNewTaskFlow } from "./new-task-flow-provider";
 import { useCreateProjectThread } from "./use-project-actions";
+import { GENERIC_CHAT_RUNTIME_MODE, isGenericChatProject } from "@t3tools/shared/genericChat";
 
 function formatWorkspaceLabel(input: {
   readonly workspaceMode: string;
@@ -69,12 +71,17 @@ export function NewTaskDraftScreen(props: {
   const isKeyboardVisible = useKeyboardState((state) => state.isVisible);
   const controlsBottomPadding = isKeyboardVisible ? 8 : Math.max(insets.bottom, 10);
   const { logicalProjects, selectedProject, setProject } = flow;
+  const isGenericChat = isGenericChatProject(selectedProject);
   const { connectedEnvironments } = useRemoteConnectionStatus();
   const environmentConnected =
     selectedProject !== null &&
     connectedEnvironments.find(
       (environment) => environment.environmentId === selectedProject.environmentId,
     )?.connectionState === "connected";
+  const submissionNoun = isGenericChat ? "chat" : "task";
+  const submitAccessibilityLabel = flow.submitting
+    ? `Starting ${submissionNoun}`
+    : `${environmentConnected ? "Start" : "Queue"} ${submissionNoun}`;
   const promptInputRef = useRef<ComposerEditorHandle>(null);
   const loadedBranchesProjectKeyRef = useRef<string | null>(null);
   const appliedInitialProjectKeyRef = useRef<string | null>(null);
@@ -187,8 +194,11 @@ export function NewTaskDraftScreen(props: {
       return;
     }
     loadedBranchesProjectKeyRef.current = projectKey;
+    if (isGenericChat) {
+      return;
+    }
     void flow.loadBranches();
-  }, [flow.loadBranches, selectedProject]);
+  }, [flow.loadBranches, isGenericChat, selectedProject]);
 
   useEffect(() => {
     if (!selectedProject) {
@@ -252,10 +262,10 @@ export function NewTaskDraftScreen(props: {
     [flow.selectedModel?.options, flow.selectedModelOption?.capabilities],
   );
 
-  const optionsMenuActions = useMemo(
-    () => [
-      ...buildProviderOptionMenuActions(providerOptionDescriptors),
-      {
+  const optionsMenuActions = useMemo(() => {
+    const actions: MenuAction[] = [...buildProviderOptionMenuActions(providerOptionDescriptors)];
+    if (!isGenericChat) {
+      actions.push({
         id: "options-runtime",
         title: "Runtime",
         subtitle:
@@ -276,26 +286,26 @@ export function NewTaskDraftScreen(props: {
             state: flow.runtimeMode === value ? ("on" as const) : undefined,
           };
         }),
-      },
-      {
-        id: "options-interaction",
-        title: "Interaction",
-        subtitle: flow.interactionMode === "plan" ? "Plan" : "Default",
-        subactions: [
-          { id: "options:interaction:default", title: "Default" },
-          { id: "options:interaction:plan", title: "Plan" },
-        ].map((option) => {
-          const value = option.id.replace("options:interaction:", "");
-          return {
-            id: option.id,
-            title: option.title,
-            state: flow.interactionMode === value ? ("on" as const) : undefined,
-          };
-        }),
-      },
-    ],
-    [flow.interactionMode, flow.runtimeMode, providerOptionDescriptors],
-  );
+      });
+    }
+    actions.push({
+      id: "options-interaction",
+      title: "Interaction",
+      subtitle: flow.interactionMode === "plan" ? "Plan" : "Default",
+      subactions: [
+        { id: "options:interaction:default", title: "Default" },
+        { id: "options:interaction:plan", title: "Plan" },
+      ].map((option) => {
+        const value = option.id.replace("options:interaction:", "");
+        return {
+          id: option.id,
+          title: option.title,
+          state: flow.interactionMode === value ? ("on" as const) : undefined,
+        };
+      }),
+    });
+    return actions;
+  }, [flow.interactionMode, flow.runtimeMode, isGenericChat, providerOptionDescriptors]);
 
   const workspaceMenuActions = useMemo(() => {
     const branchActions =
@@ -465,12 +475,21 @@ export function NewTaskDraftScreen(props: {
     }
     const draft = getComposerDraftSnapshot(draftKey);
     const modelSelection = draft.modelSelection ?? flow.selectedModel;
-    const workspaceMode = draft.workspaceSelection?.mode ?? flow.workspaceMode;
-    const selectedBranchName = draft.workspaceSelection?.branch ?? flow.selectedBranchName;
-    const selectedWorktreePath =
-      draft.workspaceSelection?.worktreePath ?? flow.selectedWorktreePath;
-    const startFromOrigin = draft.workspaceSelection?.startFromOrigin ?? flow.startFromOrigin;
-    const runtimeMode = draft.runtimeMode ?? flow.runtimeMode;
+    const workspaceMode = isGenericChat
+      ? "local"
+      : (draft.workspaceSelection?.mode ?? flow.workspaceMode);
+    const selectedBranchName = isGenericChat
+      ? null
+      : (draft.workspaceSelection?.branch ?? flow.selectedBranchName);
+    const selectedWorktreePath = isGenericChat
+      ? null
+      : (draft.workspaceSelection?.worktreePath ?? flow.selectedWorktreePath);
+    const startFromOrigin = isGenericChat
+      ? false
+      : (draft.workspaceSelection?.startFromOrigin ?? flow.startFromOrigin);
+    const runtimeMode = isGenericChat
+      ? GENERIC_CHAT_RUNTIME_MODE
+      : (draft.runtimeMode ?? flow.runtimeMode);
     const interactionMode = draft.interactionMode ?? flow.interactionMode;
     const initialMessageText = draft.text.trim();
 
@@ -596,7 +615,9 @@ export function NewTaskDraftScreen(props: {
 
   return (
     <View className="flex-1 bg-sheet">
-      <NativeStackScreenOptions options={{ title: selectedProject.title }} />
+      <NativeStackScreenOptions
+        options={{ title: isGenericChat ? "New chat" : selectedProject.title }}
+      />
 
       <KeyboardAvoidingView automaticOffset behavior="padding" className="flex-1">
         <View className="min-h-0 flex-1 px-5 pt-2">
@@ -609,7 +630,9 @@ export function NewTaskDraftScreen(props: {
             skills={flow.selectedProviderSkills}
             onChangeText={flow.setPrompt}
             onPasteImages={(uris) => void handleNativePasteImages(uris)}
-            placeholder={`Describe a coding task in ${selectedProject.title}`}
+            placeholder={
+              isGenericChat ? "Ask anything" : `Describe a coding task in ${selectedProject.title}`
+            }
             style={{ flex: 1, minHeight: 0 }}
             textStyle={headlineText}
           />
@@ -668,25 +691,21 @@ export function NewTaskDraftScreen(props: {
                   label={selectedEnvironmentLabel}
                 />
               </ControlPillMenu>
-              <ControlPillMenu
-                actions={workspaceMenuActions}
-                onPressAction={({ nativeEvent }) => handleWorkspaceMenuAction(nativeEvent.event)}
-              >
-                <ComposerToolbarTrigger
-                  accessibilityLabel="Workspace"
-                  icon="point.topleft.down.curvedto.point.bottomright.up"
-                  label={workspaceLabel}
-                />
-              </ControlPillMenu>
+              {!isGenericChat ? (
+                <ControlPillMenu
+                  actions={workspaceMenuActions}
+                  onPressAction={({ nativeEvent }) => handleWorkspaceMenuAction(nativeEvent.event)}
+                >
+                  <ComposerToolbarTrigger
+                    accessibilityLabel="Workspace"
+                    icon="point.topleft.down.curvedto.point.bottomright.up"
+                    label={workspaceLabel}
+                  />
+                </ControlPillMenu>
+              ) : null}
             </ComposerToolbarScroller>
             <ComposerToolbarButton
-              accessibilityLabel={
-                flow.submitting
-                  ? "Starting task"
-                  : environmentConnected
-                    ? "Start task"
-                    : "Queue task"
-              }
+              accessibilityLabel={submitAccessibilityLabel}
               icon={environmentConnected ? "arrow.up" : "tray.and.arrow.up"}
               onPress={() => void handleStart()}
               variant="primary"
@@ -696,7 +715,7 @@ export function NewTaskDraftScreen(props: {
                 !flow.selectedModel ||
                 flow.prompt.trim().length === 0 ||
                 flow.submitting ||
-                (flow.workspaceMode === "worktree" && !flow.selectedBranchName)
+                (!isGenericChat && flow.workspaceMode === "worktree" && !flow.selectedBranchName)
               }
             />
           </ComposerToolbarRow>

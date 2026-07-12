@@ -53,9 +53,52 @@ files.
 Agents must read the referenced maintenance record before rebasing upstream or modifying a listed
 feature.
 
-| ID                | Feature                        | Status               | Maintenance record                           | Tests                                                                                                                                           |
-| ----------------- | ------------------------------ | -------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FORK-HERMES-001` | Hermes Agent provider over ACP | Active, early access | [`docs/fork/hermes.md`](docs/fork/hermes.md) | `vp test apps/server/src/provider/hermes packages/contracts/src/settings.test.ts apps/web/src/components/settings/SettingsPanels.logic.test.ts` |
+| ID                | Feature                        | Status               | Maintenance record                                       | Tests                                                                                                                                                                                                                                                                                    |
+| ----------------- | ------------------------------ | -------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FORK-CHAT-001`   | Directoryless generic chat     | Active               | [`docs/fork/generic-chat.md`](docs/fork/generic-chat.md) | `vp test packages/shared/src/genericChat.test.ts packages/client-runtime/src/state/projectGrouping.genericChat.test.ts apps/server/src/genericChat.test.ts apps/server/src/orchestration/Layers/ProviderCommandReactor.genericChat.test.ts apps/mobile/src/lib/repositoryGroups.test.ts` |
+| `FORK-HERMES-001` | Hermes Agent provider over ACP | Active, early access | [`docs/fork/hermes.md`](docs/fork/hermes.md)             | `vp test apps/server/src/provider/hermes packages/contracts/src/settings.test.ts apps/web/src/components/settings/SettingsPanels.logic.test.ts`                                                                                                                                          |
+
+### FORK-CHAT-001 ownership map
+
+Fork-owned paths:
+
+- `packages/shared/src/genericChat.ts`
+- `packages/client-runtime/src/state/projectGrouping.genericChat.test.ts`
+- `apps/server/src/genericChat.ts`
+- focused `genericChat.test.ts` files
+- `apps/mobile/src/features/threads/use-start-generic-chat.ts`
+- `docs/fork/generic-chat.md`
+
+Shared upstream touchpoints containing additive generic-chat behavior:
+
+- `packages/shared/package.json`
+- `packages/client-runtime/src/state/projectGrouping.ts`
+- `apps/server/src/serverRuntimeStartup.ts`
+- `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts`
+- `apps/web/src/hooks/useHandleNewThread.ts`
+- `apps/web/src/components/NoActiveThreadState.tsx`
+- `apps/web/src/components/Sidebar.tsx`
+- `apps/web/src/components/ChatView.tsx`
+- `apps/web/src/components/RightPanelTabs.tsx`
+- mobile home, thread-list, new-task, workspace, Git, file, and terminal surfaces under
+  `apps/mobile/src/`
+
+The protocol still requires projects and provider cwd values. The managed scratch workspace preserves
+those invariants; the reserved project ID selects provider context, runtime restrictions, logical
+grouping, and client capability guards.
+
+### Generic chat upstream sync playbook
+
+1. Compare upstream changes to project startup, provider session creation, runtime-mode restarts,
+   project grouping, and new-thread flows on web and mobile.
+2. Preserve the reserved ID and idempotent startup repair behavior.
+3. Reapply UI guards through shared capability seams; do not fork whole upstream components.
+4. Verify that provider context is still added to every initial, resumed, and attachment-only turn.
+5. Run the focused tests plus `vp check`, `vp run typecheck`, and `vp run lint:mobile`.
+
+Remove `FORK-CHAT-001` only when upstream provides equivalent non-project chat semantics, including
+safe migration or continuation of threads stored under the reserved project. A cosmetic New Chat
+button without the provider and capability boundaries is not equivalent.
 
 ### FORK-HERMES-001 ownership map
 

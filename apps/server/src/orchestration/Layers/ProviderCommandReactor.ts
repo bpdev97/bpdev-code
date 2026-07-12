@@ -24,6 +24,11 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
+import {
+  buildGenericChatProviderInput,
+  GENERIC_CHAT_RUNTIME_MODE,
+  isGenericChatProjectId,
+} from "@t3tools/shared/genericChat";
 
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
 import { increment, orchestrationEventsProcessedTotal } from "../../observability/Metrics.ts";
@@ -60,6 +65,31 @@ type ProviderIntentEvent = Extract<
 function toNonEmptyProviderInput(value: string | undefined): string | undefined {
   const normalized = value?.trim();
   return normalized && normalized.length > 0 ? normalized : undefined;
+}
+
+export function prepareProviderMessageInput(
+  projectId: ProjectId,
+  value: string | undefined,
+): string | undefined {
+  const normalizedInput = toNonEmptyProviderInput(value);
+  return isGenericChatProjectId(projectId)
+    ? buildGenericChatProviderInput(normalizedInput)
+    : normalizedInput;
+}
+
+export function resolveProviderRuntimeMode(
+  projectId: ProjectId,
+  configuredMode: RuntimeMode,
+): RuntimeMode {
+  return isGenericChatProjectId(projectId) ? GENERIC_CHAT_RUNTIME_MODE : configuredMode;
+}
+
+export function resolveProviderSessionCwd(
+  projectId: ProjectId,
+  projectWorkspaceRoot: string | undefined,
+  threadWorkspaceCwd: string | undefined,
+): string | undefined {
+  return isGenericChatProjectId(projectId) ? projectWorkspaceRoot : threadWorkspaceCwd;
 }
 
 function mapProviderSessionStatusToOrchestrationStatus(
@@ -361,7 +391,7 @@ const make = Effect.gen(function* () {
       return yield* Effect.die(new Error(`Thread '${threadId}' was not found in read model.`));
     }
 
-    const desiredRuntimeMode = thread.runtimeMode;
+    const desiredRuntimeMode = resolveProviderRuntimeMode(thread.projectId, thread.runtimeMode);
     const requestedModelSelection = options?.modelSelection;
     const resolveActiveSession = (threadId: ThreadId) =>
       providerService
@@ -466,10 +496,22 @@ const make = Effect.gen(function* () {
       }
     }
     const project = yield* resolveProject(thread.projectId);
-    const effectiveCwd = resolveThreadWorkspaceCwd({
+    const threadWorkspaceCwd = resolveThreadWorkspaceCwd({
       thread,
       projects: project ? [project] : [],
     });
+    const effectiveCwd = resolveProviderSessionCwd(
+      thread.projectId,
+      project?.workspaceRoot,
+      threadWorkspaceCwd,
+    );
+    if (isGenericChatProjectId(thread.projectId) && effectiveCwd === undefined) {
+      return yield* new ProviderAdapterRequestError({
+        provider: preferredProvider,
+        method: "thread.turn.start",
+        detail: `Managed generic chat project '${thread.projectId}' is unavailable. Restart the server and try again.`,
+      });
+    }
 
     const startProviderSession = (input?: {
       readonly resumeCursor?: unknown;
@@ -514,7 +556,7 @@ const make = Effect.gen(function* () {
     const existingSessionThreadId =
       thread.session && thread.session.status !== "stopped" && activeSession ? thread.id : null;
     if (existingSessionThreadId) {
-      const runtimeModeChanged = thread.runtimeMode !== thread.session?.runtimeMode;
+      const runtimeModeChanged = desiredRuntimeMode !== thread.session?.runtimeMode;
       const cwdChanged = effectiveCwd !== activeSession?.cwd;
       const sessionModelSwitch = (yield* providerService.getCapabilities(desiredInstanceId))
         .sessionModelSwitch;
@@ -552,7 +594,7 @@ const make = Effect.gen(function* () {
         desiredInstanceId,
         desiredProvider: desiredModelSelection.instanceId,
         currentRuntimeMode: thread.session?.runtimeMode,
-        desiredRuntimeMode: thread.runtimeMode,
+        desiredRuntimeMode,
         runtimeModeChanged,
         previousCwd: activeSession?.cwd,
         desiredCwd: effectiveCwd,
@@ -605,7 +647,7 @@ const make = Effect.gen(function* () {
     if (input.modelSelection !== undefined) {
       threadModelSelections.set(input.threadId, input.modelSelection);
     }
-    const normalizedInput = toNonEmptyProviderInput(input.messageText);
+    const providerInput = prepareProviderMessageInput(thread.projectId, input.messageText);
     const normalizedAttachments = input.attachments ?? [];
     const activeSession = yield* providerService
       .listSessions()
@@ -637,7 +679,7 @@ const make = Effect.gen(function* () {
 
     return {
       threadId: input.threadId,
-      ...(normalizedInput ? { input: normalizedInput } : {}),
+      ...(providerInput ? { input: providerInput } : {}),
       ...(normalizedAttachments.length > 0 ? { attachments: normalizedAttachments } : {}),
       ...(modelForTurn !== undefined ? { modelSelection: modelForTurn } : {}),
       ...(input.interactionMode !== undefined ? { interactionMode: input.interactionMode } : {}),

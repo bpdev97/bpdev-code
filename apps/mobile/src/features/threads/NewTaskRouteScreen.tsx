@@ -2,6 +2,7 @@ import { NativeHeaderToolbar } from "../../native/StackHeader";
 import { useNavigation } from "@react-navigation/native";
 import { SymbolView } from "expo-symbols";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { isGenericChatProjectId } from "@t3tools/shared/genericChat";
 import { useMemo } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -194,12 +195,21 @@ export function NewTaskRouteScreen() {
                 >
                   <View className="flex-row items-center justify-between gap-3">
                     <View className="h-7 w-7 items-center justify-center">
-                      <ProjectFavicon
-                        environmentId={item.environmentId}
-                        size={20}
-                        projectTitle={item.title}
-                        workspaceRoot={item.workspaceRoot}
-                      />
+                      {isGenericChatProjectId(item.id) ? (
+                        <SymbolView
+                          name="bubble.left.and.bubble.right"
+                          size={20}
+                          tintColor={accentColor}
+                          type="monochrome"
+                        />
+                      ) : (
+                        <ProjectFavicon
+                          environmentId={item.environmentId}
+                          size={20}
+                          projectTitle={item.title}
+                          workspaceRoot={item.workspaceRoot}
+                        />
+                      )}
                     </View>
                     <View className="flex-1">
                       <Text className="text-base leading-snug font-t3-bold">{item.title}</Text>

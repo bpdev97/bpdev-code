@@ -8,6 +8,12 @@ import {
   DEFAULT_SERVER_SETTINGS,
   type ScopedProjectRef,
 } from "@t3tools/contracts";
+import {
+  GENERIC_CHAT_RUNTIME_MODE,
+  findGenericChatProject,
+  isGenericChatProject,
+  isGenericChatProjectId,
+} from "@t3tools/shared/genericChat";
 import { useParams, useRouter } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 import {
@@ -28,6 +34,7 @@ import { resolveNewDraftStartFromOrigin } from "../lib/chatThreadActions";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
 import { useClientSettings } from "./useSettings";
+import { usePrimaryEnvironmentId } from "../state/environments";
 
 export function useNewThreadHandler() {
   const projects = useProjects();
@@ -65,13 +72,23 @@ export function useNewThreadHandler() {
       );
       const environmentSettings =
         serverConfigs.get(projectRef.environmentId)?.settings ?? DEFAULT_SERVER_SETTINGS;
+      const genericChat = isGenericChatProjectId(projectRef.projectId);
+      const threadOptions = genericChat
+        ? {
+            ...options,
+            branch: null,
+            worktreePath: null,
+            envMode: "local" as const,
+            startFromOrigin: false,
+          }
+        : options;
       const logicalProjectKey = project
         ? deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings)
         : scopedProjectKey(projectRef);
-      const hasBranchOption = options?.branch !== undefined;
-      const hasWorktreePathOption = options?.worktreePath !== undefined;
-      const hasEnvModeOption = options?.envMode !== undefined;
-      const hasStartFromOriginOption = options?.startFromOrigin !== undefined;
+      const hasBranchOption = threadOptions?.branch !== undefined;
+      const hasWorktreePathOption = threadOptions?.worktreePath !== undefined;
+      const hasEnvModeOption = threadOptions?.envMode !== undefined;
+      const hasStartFromOriginOption = threadOptions?.startFromOrigin !== undefined;
       const storedDraftThread = getDraftSessionByLogicalProjectKey(logicalProjectKey);
       const storedDraftThreadRef = storedDraftThread
         ? scopeThreadRef(storedDraftThread.environmentId, storedDraftThread.threadId)
@@ -94,13 +111,19 @@ export function useNewThreadHandler() {
             hasBranchOption ||
             hasWorktreePathOption ||
             hasEnvModeOption ||
-            hasStartFromOriginOption
+            hasStartFromOriginOption ||
+            genericChat
           ) {
             setDraftThreadContext(reusableStoredDraftThread.draftId, {
-              ...(hasBranchOption ? { branch: options?.branch ?? null } : {}),
-              ...(hasWorktreePathOption ? { worktreePath: options?.worktreePath ?? null } : {}),
-              ...(hasEnvModeOption ? { envMode: options?.envMode } : {}),
-              ...(hasStartFromOriginOption ? { startFromOrigin: options?.startFromOrigin } : {}),
+              ...(hasBranchOption ? { branch: threadOptions?.branch ?? null } : {}),
+              ...(hasWorktreePathOption
+                ? { worktreePath: threadOptions?.worktreePath ?? null }
+                : {}),
+              ...(hasEnvModeOption ? { envMode: threadOptions?.envMode } : {}),
+              ...(hasStartFromOriginOption
+                ? { startFromOrigin: threadOptions?.startFromOrigin }
+                : {}),
+              ...(genericChat ? { runtimeMode: GENERIC_CHAT_RUNTIME_MODE } : {}),
             });
           }
           setLogicalProjectDraftThreadId(
@@ -134,13 +157,17 @@ export function useNewThreadHandler() {
           hasBranchOption ||
           hasWorktreePathOption ||
           hasEnvModeOption ||
-          hasStartFromOriginOption
+          hasStartFromOriginOption ||
+          genericChat
         ) {
           setDraftThreadContext(currentRouteTarget.draftId, {
-            ...(hasBranchOption ? { branch: options?.branch ?? null } : {}),
-            ...(hasWorktreePathOption ? { worktreePath: options?.worktreePath ?? null } : {}),
-            ...(hasEnvModeOption ? { envMode: options?.envMode } : {}),
-            ...(hasStartFromOriginOption ? { startFromOrigin: options?.startFromOrigin } : {}),
+            ...(hasBranchOption ? { branch: threadOptions?.branch ?? null } : {}),
+            ...(hasWorktreePathOption ? { worktreePath: threadOptions?.worktreePath ?? null } : {}),
+            ...(hasEnvModeOption ? { envMode: threadOptions?.envMode } : {}),
+            ...(hasStartFromOriginOption
+              ? { startFromOrigin: threadOptions?.startFromOrigin }
+              : {}),
+            ...(genericChat ? { runtimeMode: GENERIC_CHAT_RUNTIME_MODE } : {}),
           });
         }
         setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, currentRouteTarget.draftId, {
@@ -148,10 +175,11 @@ export function useNewThreadHandler() {
           createdAt: latestActiveDraftThread.createdAt,
           runtimeMode: latestActiveDraftThread.runtimeMode,
           interactionMode: latestActiveDraftThread.interactionMode,
-          ...(hasBranchOption ? { branch: options?.branch ?? null } : {}),
-          ...(hasWorktreePathOption ? { worktreePath: options?.worktreePath ?? null } : {}),
-          ...(hasEnvModeOption ? { envMode: options?.envMode } : {}),
-          ...(hasStartFromOriginOption ? { startFromOrigin: options?.startFromOrigin } : {}),
+          ...(hasBranchOption ? { branch: threadOptions?.branch ?? null } : {}),
+          ...(hasWorktreePathOption ? { worktreePath: threadOptions?.worktreePath ?? null } : {}),
+          ...(hasEnvModeOption ? { envMode: threadOptions?.envMode } : {}),
+          ...(hasStartFromOriginOption ? { startFromOrigin: threadOptions?.startFromOrigin } : {}),
+          ...(genericChat ? { runtimeMode: GENERIC_CHAT_RUNTIME_MODE } : {}),
         });
         return Promise.resolve();
       }
@@ -159,21 +187,21 @@ export function useNewThreadHandler() {
       const draftId = newDraftId();
       const threadId = newThreadId();
       const createdAt = new Date().toISOString();
-      const initialEnvMode = options?.envMode ?? environmentSettings.defaultThreadEnvMode;
+      const initialEnvMode = threadOptions?.envMode ?? environmentSettings.defaultThreadEnvMode;
       return (async () => {
         setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, draftId, {
           threadId,
           createdAt,
-          branch: options?.branch ?? null,
-          worktreePath: options?.worktreePath ?? null,
+          branch: threadOptions?.branch ?? null,
+          worktreePath: threadOptions?.worktreePath ?? null,
           envMode: initialEnvMode,
           startFromOrigin:
-            options?.startFromOrigin ??
+            threadOptions?.startFromOrigin ??
             resolveNewDraftStartFromOrigin({
               envMode: initialEnvMode,
               newWorktreesStartFromOrigin: environmentSettings.newWorktreesStartFromOrigin,
             }),
-          runtimeMode: DEFAULT_RUNTIME_MODE,
+          runtimeMode: genericChat ? GENERIC_CHAT_RUNTIME_MODE : DEFAULT_RUNTIME_MODE,
         });
         applyStickyState(draftId);
 
@@ -206,7 +234,7 @@ export function useHandleNewThread() {
   const projects = useProjects();
   const orderedProjects = useMemo(() => {
     return orderItemsByPreferredIds({
-      items: projects,
+      items: projects.filter((project) => !isGenericChatProject(project)),
       preferredIds: projectOrder,
       getId: getProjectOrderKey,
       getPreferenceIds: (project) => [
@@ -226,4 +254,22 @@ export function useHandleNewThread() {
     handleNewThread,
     routeThreadRef,
   };
+}
+
+export function useHandleNewChat() {
+  const projects = useProjects();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const handleNewThread = useNewThreadHandler();
+  const chatProject = useMemo(
+    () => findGenericChatProject(projects, primaryEnvironmentId),
+    [primaryEnvironmentId, projects],
+  );
+  const handleNewChat = useCallback((): Promise<void> => {
+    if (!chatProject) {
+      return Promise.resolve();
+    }
+    return handleNewThread(scopeProjectRef(chatProject.environmentId, chatProject.id));
+  }, [chatProject, handleNewThread]);
+
+  return { chatProject, handleNewChat };
 }

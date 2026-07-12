@@ -34,6 +34,7 @@ import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import * as ProviderSessionReaper from "./provider/Services/ProviderSessionReaper.ts";
+import { ensureGenericChatProject } from "./genericChat.ts";
 import {
   formatHeadlessServeOutput,
   formatHostForUrl,
@@ -344,6 +345,16 @@ export const make = Effect.gen(function* () {
         yield* orchestrationReactor.start().pipe(Scope.provide(reactorScope));
         yield* providerSessionReaper.start().pipe(Scope.provide(reactorScope));
       }),
+    );
+
+    yield* runStartupPhase(
+      "generic-chat.ensure",
+      ensureGenericChatProject().pipe(
+        Effect.provideService(Crypto.Crypto, crypto),
+        Effect.catchCause((cause) =>
+          Effect.logWarning("failed to ensure managed generic chat project", { cause }),
+        ),
+      ),
     );
 
     const welcomeBase = yield* resolveWelcomeBase;

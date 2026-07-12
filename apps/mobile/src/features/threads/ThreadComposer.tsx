@@ -24,6 +24,7 @@ import {
   View,
   type ViewStyle,
 } from "react-native";
+import type { MenuAction } from "@react-native-menu/menu";
 import ImageViewing from "react-native-image-viewing";
 import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
 import { useThemeColor } from "../../lib/useThemeColor";
@@ -96,6 +97,7 @@ export interface ThreadComposerProps {
   readonly activeThreadBusy: boolean;
   readonly environmentId: EnvironmentId;
   readonly projectCwd: string | null;
+  readonly runtimeModeLocked?: boolean;
   readonly editorRef?: RefObject<ComposerEditorHandle | null>;
   readonly onChangeDraftMessage: (value: string) => void;
   readonly onPickDraftImages: () => Promise<void>;
@@ -609,10 +611,10 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   );
 
   // ── Options menu ─────────────────────────────────────────
-  const optionsMenuActions = useMemo(
-    () => [
-      ...buildProviderOptionMenuActions(providerOptionDescriptors),
-      {
+  const optionsMenuActions = useMemo(() => {
+    const actions: MenuAction[] = [...buildProviderOptionMenuActions(providerOptionDescriptors)];
+    if (!props.runtimeModeLocked) {
+      actions.push({
         id: "options-runtime",
         title: "Runtime",
         subtitle:
@@ -633,26 +635,31 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
             state: currentRuntimeMode === value ? ("on" as const) : undefined,
           };
         }),
-      },
-      {
-        id: "options-interaction",
-        title: "Interaction",
-        subtitle: currentInteractionMode === "plan" ? "Plan" : "Default",
-        subactions: [
-          { id: "options:interaction:default", title: "Default" },
-          { id: "options:interaction:plan", title: "Plan" },
-        ].map((option) => {
-          const value = option.id.replace("options:interaction:", "");
-          return {
-            id: option.id,
-            title: option.title,
-            state: currentInteractionMode === value ? ("on" as const) : undefined,
-          };
-        }),
-      },
-    ],
-    [currentInteractionMode, currentRuntimeMode, providerOptionDescriptors],
-  );
+      });
+    }
+    actions.push({
+      id: "options-interaction",
+      title: "Interaction",
+      subtitle: currentInteractionMode === "plan" ? "Plan" : "Default",
+      subactions: [
+        { id: "options:interaction:default", title: "Default" },
+        { id: "options:interaction:plan", title: "Plan" },
+      ].map((option) => {
+        const value = option.id.replace("options:interaction:", "");
+        return {
+          id: option.id,
+          title: option.title,
+          state: currentInteractionMode === value ? ("on" as const) : undefined,
+        };
+      }),
+    });
+    return actions;
+  }, [
+    currentInteractionMode,
+    currentRuntimeMode,
+    props.runtimeModeLocked,
+    providerOptionDescriptors,
+  ]);
 
   // ── Menu handlers ────────────────────────────────────────
   function handleModelMenuAction(event: string) {
@@ -676,6 +683,9 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
       return;
     }
     if (event.startsWith("options:runtime:")) {
+      if (props.runtimeModeLocked) {
+        return;
+      }
       const runtimeMode = event.slice("options:runtime:".length) as RuntimeMode;
       props.onUpdateRuntimeMode(runtimeMode);
       return;

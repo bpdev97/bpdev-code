@@ -39,7 +39,9 @@ function toNativeHeaderMenuItems(items: HomeListFilterMenu["items"]): NativeHead
 export function createSidebarHeaderItems(input: {
   readonly filterIcon: string;
   readonly filterMenu: HomeListFilterMenu;
+  readonly genericChatAvailable: boolean;
   readonly onOpenSettings: () => void;
+  readonly onStartNewChat: () => void;
 }): NativeStackHeaderItem[] {
   return [
     withNativeGlassHeaderItem({
@@ -51,6 +53,14 @@ export function createSidebarHeaderItems(input: {
         title: input.filterMenu.title,
         items: toNativeHeaderMenuItems(input.filterMenu.items),
       },
+    }),
+    withNativeGlassHeaderItem({
+      type: "button",
+      label: "",
+      accessibilityLabel: "New chat",
+      disabled: !input.genericChatAvailable,
+      icon: sfSymbolIcon("bubble.left.and.bubble.right"),
+      onPress: input.onStartNewChat,
     }),
     withNativeGlassHeaderItem({
       type: "button",

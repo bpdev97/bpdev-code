@@ -5,6 +5,7 @@ import type {
 } from "@t3tools/client-runtime/state/shell";
 import { LegendList } from "@legendapp/list/react-native";
 import type { MenuAction } from "@react-native-menu/menu";
+import { isGenericChatProject } from "@t3tools/shared/genericChat";
 import { SymbolView } from "expo-symbols";
 import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import type { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent } from "react-native";
@@ -109,10 +110,12 @@ interface ThreadNavigationSidebarProps {
   readonly onOpenSettings: () => void;
   readonly onOpenEnvironmentSettings: () => void;
   readonly onNewThreadInProject: (project: EnvironmentProject) => void;
+  readonly onStartNewChat: () => void;
   readonly onSearchQueryChange: (query: string) => void;
   readonly onSelectThread: (thread: EnvironmentThreadShell) => void;
   readonly onRequestVisibility: () => void;
   readonly searchQuery: string;
+  readonly genericChatAvailable: boolean;
 }
 
 /**
@@ -232,6 +235,9 @@ function ThreadNavigationSidebarPane(
   const projectCwdByKey = useMemo(() => {
     const map = new Map<string, string>();
     for (const project of projects) {
+      if (isGenericChatProject(project)) {
+        continue;
+      }
       map.set(scopedProjectKey(project.environmentId, project.id), project.workspaceRoot);
     }
     return map;
@@ -520,9 +526,17 @@ function ThreadNavigationSidebarPane(
       createSidebarHeaderItems({
         filterIcon,
         filterMenu,
+        genericChatAvailable: props.genericChatAvailable,
         onOpenSettings: props.onOpenSettings,
+        onStartNewChat: props.onStartNewChat,
       }),
-    [filterIcon, filterMenu, props.onOpenSettings],
+    [
+      filterIcon,
+      filterMenu,
+      props.genericChatAvailable,
+      props.onOpenSettings,
+      props.onStartNewChat,
+    ],
   );
   const listEmpty = (
     <Text className="px-2 py-4 text-sm text-foreground-muted">
@@ -699,7 +713,12 @@ function ThreadNavigationSidebarPane(
                 icon={filterIcon}
               />
             </ControlPillMenu>
-            <SidebarHeaderActions grouped onOpenSettings={props.onOpenSettings} />
+            <SidebarHeaderActions
+              grouped
+              genericChatAvailable={props.genericChatAvailable}
+              onOpenSettings={props.onOpenSettings}
+              onStartNewChat={props.onStartNewChat}
+            />
           </SidebarHeaderButtonGroup>
         </View>
 

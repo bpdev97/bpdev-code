@@ -1,6 +1,10 @@
 import { scopedProjectKey, scopeProjectRef } from "../environment/scoped.ts";
 import type { ScopedProjectRef, SidebarProjectGroupingMode } from "@t3tools/contracts";
 import type { ClientSettings } from "@t3tools/contracts/settings";
+import {
+  GENERIC_CHAT_LOGICAL_PROJECT_KEY,
+  isGenericChatProjectId,
+} from "@t3tools/shared/genericChat";
 
 import type { EnvironmentProject } from "./models.ts";
 import { normalizeProjectPathForComparison } from "./projects.ts";
@@ -124,6 +128,10 @@ export function deriveLogicalProjectKey(
     readonly groupingMode?: SidebarProjectGroupingMode;
   },
 ): string {
+  if (isGenericChatProjectId(project.id)) {
+    return GENERIC_CHAT_LOGICAL_PROJECT_KEY;
+  }
+
   const groupingMode = options?.groupingMode ?? "repository";
   if (groupingMode === "separate") {
     return derivePhysicalProjectKey(project);
