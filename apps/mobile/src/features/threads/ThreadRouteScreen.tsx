@@ -707,25 +707,25 @@ function ThreadRouteContent(
         icon: "folder",
         onPress: handleOpenFilesInspector,
       });
-    }
-    if (selectedThreadProject?.workspaceRoot) {
+      if (selectedThreadProject?.workspaceRoot) {
+        actions.push({
+          accessibilityLabel: "Open terminal",
+          icon: "terminal",
+          onPress: () => handleOpenTerminal(null),
+        });
+      }
       actions.push({
-        accessibilityLabel: "Open terminal",
-        icon: "terminal",
-        onPress: () => handleOpenTerminal(null),
+        accessibilityLabel: "Open git controls",
+        icon: "point.topleft.down.curvedto.point.bottomright.up",
+        onPress: handleOpenGitInspector,
       });
-    }
-    actions.push({
-      accessibilityLabel: "Open git controls",
-      icon: "point.topleft.down.curvedto.point.bottomright.up",
-      onPress: handleOpenGitInspector,
-    });
-    if (fileInspector.supported && selectedThreadCwd !== null) {
-      actions.push({
-        accessibilityLabel: "Toggle inspector",
-        icon: "sidebar.right",
-        onPress: handleToggleInspector,
-      });
+      if (fileInspector.supported) {
+        actions.push({
+          accessibilityLabel: "Toggle inspector",
+          icon: "sidebar.right",
+          onPress: handleToggleInspector,
+        });
+      }
     }
     return actions;
   }, [
