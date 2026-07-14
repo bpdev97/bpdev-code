@@ -6,8 +6,8 @@ import * as Schema from "effect/Schema";
 import { AppState, Platform } from "react-native";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
+  RelayAgentActivitySnapshotResponse,
   type RelayDeviceRegistrationRequest,
-  type RelayAgentActivitySnapshotResponse,
   type RelayLiveActivityRegistrationRequest,
 } from "@t3tools/contracts/relay";
 import { findErrorTraceId } from "@t3tools/client-runtime/errors";
@@ -35,6 +35,7 @@ import { supportsAgentAwarenessPush } from "./capabilities";
 import { makeRelayDeviceRegistrationRequest, resolveApsEnvironment } from "./registrationPayload";
 
 const REMOTE_ACTIVITY_REGISTRATION_RETRY_MS = 15_000;
+const decodeAgentActivitySnapshot = Schema.decodeUnknownEffect(RelayAgentActivitySnapshotResponse);
 
 function resolveMobileUrlScheme(): string {
   const configuredScheme = Constants.expoConfig?.scheme;
@@ -169,6 +170,65 @@ function canRegisterRemoteLiveActivities(): boolean {
   return Platform.OS === "ios";
 }
 
+function personalPushConnections(): ReadonlyArray<SavedRemoteConnection> {
+  return [...environmentConnections.values()].filter(
+    (connection) =>
+      connection.relayManaged !== true &&
+      connection.authenticationMethod !== "dpop" &&
+      typeof connection.bearerToken === "string" &&
+      connection.bearerToken.length > 0,
+  );
+}
+
+function hasAgentAwarenessBackend(): boolean {
+  return relayTokenProvider !== null || personalPushConnections().length > 0;
+}
+
+function personalPushRequest(
+  connection: SavedRemoteConnection,
+  path: string,
+  options?: { readonly method?: "GET" | "POST"; readonly body?: unknown },
+): Effect.Effect<unknown, unknown> {
+  return Effect.tryPromise({
+    try: async () => {
+      if (!connection.bearerToken) throw new Error("connection has no bearer token");
+      const response = await fetch(`${connection.httpBaseUrl.replace(/\/+$/g, "")}${path}`, {
+        method: options?.method ?? "GET",
+        headers: {
+          authorization: `Bearer ${connection.bearerToken}`,
+          ...(options?.body === undefined ? {} : { "content-type": "application/json" }),
+        },
+        body: options?.body === undefined ? undefined : JSON.stringify(options.body),
+      });
+      if (!response.ok) throw new Error(`personal push request failed with ${response.status}`);
+      return await response.json();
+    },
+    catch: (cause) => cause,
+  });
+}
+
+function sendToPersonalPushServers(path: string, body: unknown): Effect.Effect<boolean, never> {
+  const connections = personalPushConnections();
+  if (connections.length === 0) return Effect.succeed(false);
+  return Effect.forEach(
+    connections,
+    (connection) =>
+      personalPushRequest(connection, path, { method: "POST", body }).pipe(
+        Effect.as(true),
+        Effect.catch((error) =>
+          Effect.sync(() => {
+            logRegistrationError(
+              `personal push request failed for ${connection.environmentLabel}`,
+              error,
+            );
+            return false;
+          }),
+        ),
+      ),
+    { concurrency: 3 },
+  ).pipe(Effect.map((results) => results.some(Boolean)));
+}
+
 export function shouldRegisterAgentAwarenessDeviceForProvider(
   previousIdentity: string | null,
   identity: string | undefined,
@@ -192,6 +252,12 @@ export function setAgentAwarenessRelayTokenProvider(
   relayTokenProvider = provider;
   relayTokenProviderIdentity = provider ? (identity ?? null) : null;
   if (!provider) {
+    if (personalPushConnections().length > 0) {
+      ensurePushTokenListener();
+      ensureAppStateListener();
+      enqueueDeviceRegistration({}, "personal device registration after cloud sign-out failed");
+      return;
+    }
     pushTokenSubscription?.remove();
     pushTokenSubscription = null;
     appStateSubscription?.remove();
@@ -345,11 +411,16 @@ function registerDeviceWithRelay(
       });
       return;
     }
-    const relayConfig = readRelayConfig();
-    if (!relayConfig) {
+    const personalRegistered = yield* sendToPersonalPushServers(
+      "/api/personal-push/v1/devices",
+      body,
+    );
+    const provider = relayTokenProvider;
+    const relayConfig = provider ? readRelayConfig() : null;
+    if (!provider || !relayConfig) {
       // Nothing is in flight and nothing can succeed until configuration
       // appears; "pending" would otherwise stick forever.
-      setRegistrationStatus("unknown");
+      setRegistrationStatus(personalRegistered ? "registered" : "unknown");
       return;
     }
     const token = yield* relayToken("read-device-registration-relay-token");
@@ -362,7 +433,7 @@ function registerDeviceWithRelay(
     }
     if (!token) {
       logRegistrationDebug("relay device registration skipped; user is not signed in");
-      setRegistrationStatus("unknown");
+      setRegistrationStatus(personalRegistered ? "registered" : "unknown");
       return;
     }
 
@@ -400,10 +471,22 @@ function registerDeviceWithRelay(
     logRegistrationDebug("relay device registration request started", {
       expectedGeneration,
     });
-    yield* client.registerDevice({
-      clerkToken: token,
-      payload,
-    });
+    const hostedRegistered = yield* client
+      .registerDevice({
+        clerkToken: token,
+        payload,
+      })
+      .pipe(
+        Effect.as(true),
+        Effect.catch((error) =>
+          personalRegistered
+            ? Effect.sync(() => {
+                logRegistrationError("hosted relay device registration failed", error);
+                return false;
+              })
+            : Effect.fail(error),
+        ),
+      );
     if (expectedGeneration !== deviceRegistrationGeneration) {
       // Signed out while the request was in flight: the sign-out path already
       // reset the status and cleared the record for the next account, so a
@@ -415,6 +498,7 @@ function registerDeviceWithRelay(
       return;
     }
     setRegistrationStatus("registered");
+    if (!hostedRegistered) return;
     yield* Effect.promise(() =>
       saveAgentAwarenessRegistrationRecord({
         identity,
@@ -465,7 +549,7 @@ export function armAgentAwarenessLiveActivityForLocalWork(input: {
   readonly threadTitle: string;
   readonly projectTitle: string;
 }): void {
-  if (!canRegisterRemoteLiveActivities() || !relayTokenProvider) {
+  if (!canRegisterRemoteLiveActivities() || !hasAgentAwarenessBackend()) {
     return;
   }
   void loadPreferences()
@@ -525,13 +609,23 @@ function readAgentActivitySnapshot(): Effect.Effect<
   ManagedRelay.ManagedRelayClient
 > {
   return Effect.gen(function* () {
-    if (!readRelayConfig()) return null;
-    const token = yield* relayToken("read-live-activity-registration-relay-token");
-    if (!token) {
-      return null;
+    if (relayTokenProvider && readRelayConfig()) {
+      const token = yield* relayToken("read-live-activity-registration-relay-token");
+      if (token) {
+        const client = yield* ManagedRelay.ManagedRelayClient;
+        return yield* client.getAgentActivitySnapshot({ clerkToken: token });
+      }
     }
-    const client = yield* ManagedRelay.ManagedRelayClient;
-    return yield* client.getAgentActivitySnapshot({ clerkToken: token });
+    for (const connection of personalPushConnections()) {
+      const result = yield* personalPushRequest(
+        connection,
+        "/api/personal-push/v1/agent-activity",
+      ).pipe(Effect.option);
+      if (result._tag === "Some") {
+        return yield* decodeAgentActivitySnapshot(result.value);
+      }
+    }
+    return null;
   }).pipe(
     Effect.catch((error) =>
       Effect.sync(() => {
@@ -546,19 +640,28 @@ function registerLiveActivityWithRelay(
   body: RelayLiveActivityRegistrationRequest,
 ): Effect.Effect<boolean, unknown, ManagedRelay.ManagedRelayClient> {
   return Effect.gen(function* () {
-    if (!readRelayConfig()) return false;
+    const personalRegistered = yield* sendToPersonalPushServers(
+      "/api/personal-push/v1/live-activities",
+      body,
+    );
+    if (!relayTokenProvider || !readRelayConfig()) return personalRegistered;
     const token = yield* relayToken("read-live-activity-registration-relay-token");
     if (!token) {
-      logRegistrationDebug("relay live activity registration skipped; user is not signed in");
-      return false;
+      return personalRegistered;
     }
 
     const client = yield* ManagedRelay.ManagedRelayClient;
-    yield* client.registerLiveActivity({
-      clerkToken: token,
-      payload: body,
-    });
-    return true;
+    return yield* client.registerLiveActivity({ clerkToken: token, payload: body }).pipe(
+      Effect.as(true),
+      Effect.catch((error) =>
+        personalRegistered
+          ? Effect.sync(() => {
+              logRegistrationError("hosted relay live activity registration failed", error);
+              return true;
+            })
+          : Effect.fail(error),
+      ),
+    );
   });
 }
 
@@ -996,7 +1099,7 @@ function registerLiveActivityPushTokenValue(input: {
 }
 
 function scheduleActiveLiveActivityRegistrationRetry(): void {
-  if (activeLiveActivityRegistrationRetry || !relayTokenProvider) {
+  if (activeLiveActivityRegistrationRetry || !hasAgentAwarenessBackend()) {
     return;
   }
 
@@ -1015,7 +1118,7 @@ export function refreshActiveLiveActivityRemoteRegistration(): Effect.Effect<
   ManagedRelay.ManagedRelayClient
 > {
   return Effect.gen(function* () {
-    if (!canRegisterRemoteLiveActivities() || !relayTokenProvider) {
+    if (!canRegisterRemoteLiveActivities() || !hasAgentAwarenessBackend()) {
       return;
     }
 

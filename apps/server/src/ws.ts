@@ -115,6 +115,7 @@ import * as PairingGrantStore from "./auth/PairingGrantStore.ts";
 import * as SessionStore from "./auth/SessionStore.ts";
 import { failEnvironmentAuthInvalid, failEnvironmentInternal } from "./auth/http.ts";
 import * as RelayClient from "@t3tools/shared/relayClient";
+import * as PersonalPushRelay from "./personalPush/PersonalPushRelayClient.ts";
 const isOrchestrationDispatchCommandError = Schema.is(OrchestrationDispatchCommandError);
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
@@ -292,6 +293,7 @@ const RPC_REQUIRED_SCOPE = new Map<string, AuthEnvironmentScope>([
   [WS_METHODS.serverRemoveKeybinding, AuthOrchestrationOperateScope],
   [WS_METHODS.serverGetSettings, AuthOrchestrationReadScope],
   [WS_METHODS.serverUpdateSettings, AuthOrchestrationOperateScope],
+  [WS_METHODS.serverTestPersonalPushRelay, AuthOrchestrationOperateScope],
   [WS_METHODS.serverDiscoverSourceControl, AuthOrchestrationReadScope],
   [WS_METHODS.serverGetTraceDiagnostics, AuthOrchestrationReadScope],
   [WS_METHODS.serverGetProcessDiagnostics, AuthOrchestrationReadScope],
@@ -1314,6 +1316,33 @@ const makeWsRpcLayer = (
             {
               "rpc.aggregate": "server",
             },
+          ),
+        [WS_METHODS.serverTestPersonalPushRelay]: (_input) =>
+          observeRpcEffect(
+            WS_METHODS.serverTestPersonalPushRelay,
+            Effect.gen(function* () {
+              const client = yield* PersonalPushRelay.makeFromServices;
+              if (!client.configured) {
+                return { ok: false, relayUrl: client.relayUrl, failure: "not_configured" as const };
+              }
+              return yield* client.snapshot().pipe(
+                Effect.as({ ok: true, relayUrl: client.relayUrl }),
+                Effect.catch((error) =>
+                  Effect.succeed({
+                    ok: false,
+                    relayUrl: client.relayUrl,
+                    failure:
+                      error.status === 401 || error.status === 403
+                        ? ("unauthorized" as const)
+                        : error.status === null
+                          ? ("unreachable" as const)
+                          : ("invalid_response" as const),
+                    ...(error.status === null ? {} : { status: error.status }),
+                  }),
+                ),
+              );
+            }),
+            { "rpc.aggregate": "server" },
           ),
         [WS_METHODS.serverDiscoverSourceControl]: (_input) =>
           observeRpcEffect(

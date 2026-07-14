@@ -123,6 +123,30 @@ describe("ServerSettings worktree defaults", () => {
   });
 });
 
+describe("ServerSettings personal push relay", () => {
+  it("defaults to an unconfigured relay for existing settings files", () => {
+    expect(decodeServerSettings({}).personalPushRelay).toEqual({ url: "", password: "" });
+  });
+
+  it("normalizes relay settings patches", () => {
+    expect(
+      decodeServerSettingsPatch({
+        personalPushRelay: {
+          url: "  https://push.example.ts.net  ",
+          password: "  shared password  ",
+          passwordRedacted: false,
+        },
+      }),
+    ).toEqual({
+      personalPushRelay: {
+        url: "https://push.example.ts.net",
+        password: "shared password",
+        passwordRedacted: false,
+      },
+    });
+  });
+});
+
 describe("ServerSettingsPatch.providerInstances", () => {
   it("treats providerInstances as an optional whole-map replacement", () => {
     const patch = decodeServerSettingsPatch({});

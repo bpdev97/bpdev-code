@@ -420,6 +420,16 @@ export const ServerConfig = Schema.Struct({
 });
 export type ServerConfig = typeof ServerConfig.Type;
 
+export const ServerPersonalPushRelayTestResult = Schema.Struct({
+  ok: Schema.Boolean,
+  relayUrl: Schema.NullOr(Schema.String),
+  failure: Schema.optional(
+    Schema.Literals(["not_configured", "unauthorized", "unreachable", "invalid_response"]),
+  ),
+  status: Schema.optional(Schema.Number),
+});
+export type ServerPersonalPushRelayTestResult = typeof ServerPersonalPushRelayTestResult.Type;
+
 const ServerUpsertKeybindingReplaceTarget = Schema.Struct({
   key: KeybindingValue,
   command: KeybindingCommand,

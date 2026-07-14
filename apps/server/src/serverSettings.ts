@@ -56,6 +56,7 @@ const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
+const PERSONAL_PUSH_RELAY_PASSWORD_SECRET = "personal-push-relay-password";
 
 const normalizeServerSettings = (
   settings: ServerSettings,
@@ -105,7 +106,18 @@ export function redactServerSettingsForClient(settings: ServerSettings): ServerS
         : instance,
     ]),
   );
-  return { ...settings, providerInstances };
+  const passwordConfigured =
+    settings.personalPushRelay.password.length > 0 ||
+    settings.personalPushRelay.passwordRedacted === true;
+  return {
+    ...settings,
+    providerInstances,
+    personalPushRelay: {
+      ...settings.personalPushRelay,
+      password: "",
+      ...(passwordConfigured ? { passwordRedacted: true } : {}),
+    },
+  };
 }
 
 export class ServerSettingsService extends Context.Service<
@@ -363,6 +375,35 @@ const make = Effect.gen(function* () {
       };
     });
 
+  const materializePersonalPushRelayPassword = (
+    settings: ServerSettings,
+  ): Effect.Effect<ServerSettings, ServerSettingsError> => {
+    if (!settings.personalPushRelay.passwordRedacted) return Effect.succeed(settings);
+    return secretStore.get(PERSONAL_PUSH_RELAY_PASSWORD_SECRET).pipe(
+      Effect.map((secret) => ({
+        ...settings,
+        personalPushRelay: {
+          ...settings.personalPushRelay,
+          password: Option.isSome(secret) ? textDecoder.decode(secret.value) : "",
+        },
+      })),
+      Effect.mapError(
+        (cause) =>
+          new ServerSettingsError({
+            settingsPath,
+            operation: "read-secret",
+            environmentVariable: "personalPushRelay.password",
+            cause,
+          }),
+      ),
+    );
+  };
+
+  const materializeSecrets = (settings: ServerSettings) =>
+    materializeProviderEnvironmentSecrets(settings).pipe(
+      Effect.flatMap(materializePersonalPushRelayPassword),
+    );
+
   const persistProviderEnvironmentSecrets = (
     current: ServerSettings,
     next: ServerSettings,
@@ -464,6 +505,46 @@ const make = Effect.gen(function* () {
       };
     });
 
+  const persistPersonalPushRelayPassword = (
+    settings: ServerSettings,
+  ): Effect.Effect<ServerSettings, ServerSettingsError> =>
+    Effect.gen(function* () {
+      const relay = settings.personalPushRelay;
+      if (relay.passwordRedacted) {
+        return {
+          ...settings,
+          personalPushRelay: { ...relay, password: "", passwordRedacted: true },
+        };
+      }
+      if (relay.password.length > 0) {
+        yield* secretStore.set(
+          PERSONAL_PUSH_RELAY_PASSWORD_SECRET,
+          textEncoder.encode(relay.password),
+        );
+        return {
+          ...settings,
+          personalPushRelay: { ...relay, password: "", passwordRedacted: true },
+        };
+      }
+      yield* secretStore.remove(PERSONAL_PUSH_RELAY_PASSWORD_SECRET);
+      const { passwordRedacted: _omit, ...withoutRedaction } = relay;
+      return {
+        ...settings,
+        personalPushRelay: { ...withoutRedaction, password: "" },
+      };
+    }).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ServerSettingsError({
+            settingsPath,
+            operation:
+              settings.personalPushRelay.password.length > 0 ? "write-secret" : "remove-secret",
+            environmentVariable: "personalPushRelay.password",
+            cause,
+          }),
+      ),
+    );
+
   const writeSettingsAtomically = Effect.fnUntraced(
     function* (settings: ServerSettings) {
       const sparseSettingsJson = yield* encodeServerSettingsJson(
@@ -560,31 +641,32 @@ const make = Effect.gen(function* () {
     start,
     ready: Deferred.await(startedDeferred),
     getSettings: getSettingsFromCache.pipe(
-      Effect.flatMap(materializeProviderEnvironmentSecrets),
+      Effect.flatMap(materializeSecrets),
       Effect.map(resolveTextGenerationProvider),
     ),
     updateSettings: (patch) =>
       writeSemaphore.withPermits(1)(
         Effect.gen(function* () {
           const current = yield* getSettingsFromCache;
-          const nextPersisted = yield* persistProviderEnvironmentSecrets(
+          const nextWithProviderSecrets = yield* persistProviderEnvironmentSecrets(
             current,
             applyServerSettingsPatch(current, patch),
           );
+          const nextPersisted = yield* persistPersonalPushRelayPassword(nextWithProviderSecrets);
           const next = yield* normalizeServerSettings(nextPersisted);
           yield* writeSettingsAtomically(next);
           yield* Cache.set(settingsCache, cacheKey, next);
           yield* emitChange(next);
-          const materialized = yield* materializeProviderEnvironmentSecrets(next);
+          const materialized = yield* materializeSecrets(next);
           return resolveTextGenerationProvider(materialized);
         }),
       ),
     get streamChanges() {
       return Stream.fromPubSub(changesPubSub).pipe(
         Stream.mapEffect((settings) =>
-          materializeProviderEnvironmentSecrets(settings).pipe(
+          materializeSecrets(settings).pipe(
             Effect.catch((error: ServerSettingsError) =>
-              Effect.logWarning("failed to materialize provider environment secrets", {
+              Effect.logWarning("failed to materialize server settings secrets", {
                 operation: error.operation,
                 providerInstanceId: error.providerInstanceId,
                 environmentVariable: error.environmentVariable,

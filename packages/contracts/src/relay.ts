@@ -878,6 +878,16 @@ export const RelayAgentActivitySnapshotResponse = Schema.Struct({
 });
 export type RelayAgentActivitySnapshotResponse = typeof RelayAgentActivitySnapshotResponse.Type;
 
+// Stable protocol shared by the personal server adapter and the optional
+// homelab push relay. It deliberately exposes only T3's agent-awareness
+// operations; the relay is not an arbitrary APNs forwarding endpoint.
+export const PersonalPushActivityPublishRequest = Schema.Struct({
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+  state: Schema.NullOr(RelayAgentActivityState),
+});
+export type PersonalPushActivityPublishRequest = typeof PersonalPushActivityPublishRequest.Type;
+
 // Lets the app decide whether arming a Live Activity is worthwhile before
 // creating one (no empty lock-screen card when nothing is running) and seed
 // the card with the real aggregate instead of a placeholder.

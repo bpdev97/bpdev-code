@@ -4,6 +4,10 @@ This guide covers the `bpdev97` personal distribution. It intentionally omits An
 app, npm publishing, Clerk, and the managed relay. Mobile connects directly to an environment over
 LAN or a tailnet.
 
+Notifications and Live Activities can optionally use the fork-owned homelab relay. See
+[`docs/fork/personal-push-relay.md`](fork/personal-push-relay.md); it does not add Clerk or expose
+the APNs provider key to phones or T3 servers.
+
 ## Public identity
 
 - GitHub repository: `bpdev97/bpdev-code`

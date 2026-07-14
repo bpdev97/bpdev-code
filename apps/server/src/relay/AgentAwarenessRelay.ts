@@ -34,6 +34,7 @@ import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import * as ServerConfig from "../config.ts";
 import {
   PUBLISH_AGENT_ACTIVITY_SECRET,
   RELAY_ENVIRONMENT_CREDENTIAL_SECRET,
@@ -44,6 +45,8 @@ import { getOrCreateEnvironmentKeyPairFromSecretStore } from "../cloud/environme
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as PersonalPushRelay from "../personalPush/PersonalPushRelayClient.ts";
+import * as ServerSettings from "../serverSettings.ts";
 
 export class AgentAwarenessRelay extends Context.Service<
   AgentAwarenessRelay,
@@ -294,6 +297,8 @@ export const make = Effect.gen(function* () {
   const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
   const snapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
+  const serverConfig = yield* ServerConfig.ServerConfig;
+  const serverSettings = yield* ServerSettings.ServerSettingsService;
   const crypto = yield* Crypto.Crypto;
   const cloudLinkKeyPair = yield* getOrCreateEnvironmentKeyPairFromSecretStore(secrets);
   const activeSnapshotPublishedRef = yield* Ref.make(false);
@@ -323,6 +328,8 @@ export const make = Effect.gen(function* () {
     Effect.map(isAgentActivityPublishingEnabled),
   );
 
+  const readPersonalPushRelay = PersonalPushRelay.makeFromRuntime(serverConfig, serverSettings);
+
   const makeRelayClient = (relayConfig: {
     readonly url: string;
     readonly environmentCredential: string;
@@ -344,20 +351,15 @@ export const make = Effect.gen(function* () {
     const publishAgentActivity = yield* readPublishAgentActivityEnabled.pipe(
       Effect.orElseSucceed(() => false),
     );
-    if (!publishAgentActivity) {
-      yield* Effect.logDebug("agent activity publish skipped; publication disabled", {
-        threadId,
-      });
-      return;
-    }
     const relayConfig = yield* readRelayConfig.pipe(Effect.orElseSucceed(() => null));
-    if (!relayConfig) {
-      yield* Effect.logDebug("agent activity publish skipped; relay link credentials unavailable", {
+    const personalPushRelay = yield* readPersonalPushRelay;
+    const hostedRelayEnabled = publishAgentActivity && relayConfig !== null;
+    if (!hostedRelayEnabled && !personalPushRelay.configured) {
+      yield* Effect.logDebug("agent activity publish skipped; no enabled relay is configured", {
         threadId,
       });
       return;
     }
-    const relayClient = yield* makeRelayClient(relayConfig);
     const environmentId = yield* serverEnvironment.getEnvironmentId;
 
     const publishState = (input: {
@@ -366,15 +368,6 @@ export const make = Effect.gen(function* () {
       readonly reason: string;
     }) =>
       Effect.gen(function* () {
-        const proof = yield* makePublishProof({
-          privateKey: cloudLinkKeyPair.privateKey,
-          relayIssuer: relayConfig.issuer,
-          environmentId,
-          threadId,
-          state: input.state,
-          jti: yield* crypto.randomUUIDv4,
-        });
-
         yield* Effect.logInfo("publishing agent activity for thread", {
           environmentId,
           threadId,
@@ -384,23 +377,41 @@ export const make = Effect.gen(function* () {
           reason: input.reason,
         });
 
-        const response = yield* relayClient.server.publishAgentActivity({
-          params: {
-            environmentId,
-            threadId,
-          },
-          payload: {
-            state: input.state,
-            proof,
-          },
-        });
-
-        yield* Effect.logInfo("agent activity publish completed", {
-          environmentId,
-          threadId,
-          ok: response.ok,
-          deliveries: deliveryStats(response.deliveries),
-        });
+        const hostedPublish =
+          hostedRelayEnabled && relayConfig
+            ? Effect.gen(function* () {
+                const proof = yield* makePublishProof({
+                  privateKey: cloudLinkKeyPair.privateKey,
+                  relayIssuer: relayConfig.issuer,
+                  environmentId,
+                  threadId,
+                  state: input.state,
+                  jti: yield* crypto.randomUUIDv4,
+                });
+                const relayClient = yield* makeRelayClient(relayConfig);
+                const response = yield* relayClient.server.publishAgentActivity({
+                  params: { environmentId, threadId },
+                  payload: { state: input.state, proof },
+                });
+                yield* Effect.logInfo("hosted agent activity publish completed", {
+                  environmentId,
+                  threadId,
+                  ok: response.ok,
+                  deliveries: deliveryStats(response.deliveries),
+                });
+              })
+            : Effect.void;
+        const personalPublish = personalPushRelay.configured
+          ? personalPushRelay.publish({ environmentId, threadId, state: input.state }).pipe(
+              Effect.tap(() =>
+                Effect.logInfo("personal agent activity publish completed", {
+                  environmentId,
+                  threadId,
+                }),
+              ),
+            )
+          : Effect.void;
+        yield* Effect.all([hostedPublish, personalPublish], { concurrency: 2, discard: true });
       });
 
     const thread = yield* snapshotQuery.getThreadShellById(threadId);
@@ -514,13 +525,10 @@ export const make = Effect.gen(function* () {
     const publishAgentActivity = yield* readPublishAgentActivityEnabled.pipe(
       Effect.orElseSucceed(() => false),
     );
-    if (!publishAgentActivity) {
-      yield* Effect.logDebug("agent activity snapshot skipped; publication disabled");
-      return false;
-    }
     const relayConfig = yield* readRelayConfig.pipe(Effect.orElseSucceed(() => null));
-    if (!relayConfig) {
-      yield* Effect.logDebug("agent activity snapshot skipped; relay link credentials unavailable");
+    const personalPushRelay = yield* readPersonalPushRelay;
+    if ((!publishAgentActivity || !relayConfig) && !personalPushRelay.configured) {
+      yield* Effect.logDebug("agent activity snapshot skipped; no enabled relay is configured");
       return false;
     }
     const environmentId = yield* serverEnvironment.getEnvironmentId;
@@ -549,8 +557,10 @@ export const make = Effect.gen(function* () {
           yield* Ref.set(activeSnapshotPublishedRef, true);
           if (logEnabledWhenReady) {
             const relayConfig = yield* readRelayConfig.pipe(Effect.orElseSucceed(() => null));
+            const personalPushRelay = yield* readPersonalPushRelay;
             yield* Effect.logInfo("agent activity publishing enabled after link reconciliation", {
-              relayUrl: relayConfig?.url,
+              hostedRelayUrl: relayConfig?.url,
+              personalRelayUrl: personalPushRelay.relayUrl,
             });
           }
           return;
@@ -580,6 +590,7 @@ export const make = Effect.gen(function* () {
         readRelayConfig.pipe(Effect.orElseSucceed(() => null)),
         readPublishAgentActivityEnabled.pipe(Effect.orElseSucceed(() => false)),
       ]);
+      const personalPushRelay = yield* readPersonalPushRelay;
       const startupState = resolveAgentActivityPublishingStartupState({
         relayConfigured: relayConfig !== null,
         publishEnabled,
@@ -598,6 +609,11 @@ export const make = Effect.gen(function* () {
             relayUrl: relayConfig?.url,
           });
           break;
+      }
+      if (personalPushRelay.configured) {
+        yield* Effect.logInfo("personal agent activity publishing enabled", {
+          relayUrl: personalPushRelay.relayUrl,
+        });
       }
       yield* Effect.forkScoped(
         Effect.sleep("1 second").pipe(

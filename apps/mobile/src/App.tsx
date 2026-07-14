@@ -18,6 +18,11 @@ import { OverlayPortalHost } from "./components/OverlayPortal";
 import { appBlurTargetRef } from "./lib/appBlurTarget";
 import { useThemeColor } from "./lib/useThemeColor";
 import { PERSONAL_DISTRIBUTION } from "../../../downstream/config";
+import { useSavedRemoteConnections } from "./state/use-remote-environment-registry";
+import {
+  registerAgentAwarenessConnection,
+  unregisterAgentAwarenessConnection,
+} from "./features/agent-awareness/remoteRegistration";
 
 import "../global.css";
 
@@ -37,6 +42,24 @@ const appLinking = {
 
 const Navigation = createStaticNavigation(RootStack);
 
+function AgentAwarenessConnectionBridge() {
+  const { savedConnectionsById } = useSavedRemoteConnections();
+
+  useEffect(() => {
+    const connections = Object.values(savedConnectionsById);
+    for (const connection of connections) {
+      registerAgentAwarenessConnection(connection);
+    }
+    return () => {
+      for (const connection of connections) {
+        unregisterAgentAwarenessConnection(connection.environmentId);
+      }
+    };
+  }, [savedConnectionsById]);
+
+  return null;
+}
+
 export default function App() {
   const colorScheme = useColorScheme();
   const statusBarBg = useThemeColor("--color-status-bar");
@@ -48,6 +71,7 @@ export default function App() {
   return (
     <RegistryContext.Provider value={appAtomRegistry}>
       <CloudAuthProvider>
+        <AgentAwarenessConnectionBridge />
         <AppearancePreferencesProvider>
           <GestureHandlerRootView className="flex-1">
             <KeyboardProvider statusBarTranslucent>

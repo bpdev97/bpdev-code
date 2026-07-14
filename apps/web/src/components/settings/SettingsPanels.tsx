@@ -7,7 +7,7 @@ import {
   RefreshCwIcon,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import {
   defaultInstanceIdForDriver,
@@ -69,6 +69,7 @@ import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
 import { formatRelativeTime, formatRelativeTimeLabel } from "../../timestampFormat";
 import { Button } from "../ui/button";
 import { DraftInput } from "../ui/draft-input";
+import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -490,6 +491,20 @@ export function GeneralSettingsPanel() {
   const { theme, setTheme } = useTheme();
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
+  const primaryEnvironment = usePrimaryEnvironment();
+  const persistServerSettings = useAtomCommand(serverEnvironment.updateSettings, {
+    reportFailure: false,
+  });
+  const testPersonalPushRelay = useAtomCommand(serverEnvironment.testPersonalPushRelay, {
+    reportFailure: false,
+  });
+  const [personalRelayUrl, setPersonalRelayUrl] = useState(settings.personalPushRelay.url);
+  const [personalRelayPassword, setPersonalRelayPassword] = useState("");
+  const [isSavingPersonalRelay, setIsSavingPersonalRelay] = useState(false);
+  const [isTestingPersonalRelay, setIsTestingPersonalRelay] = useState(false);
+  useEffect(() => {
+    setPersonalRelayUrl(settings.personalPushRelay.url);
+  }, [settings.personalPushRelay.url]);
   const observability = useAtomValue(primaryServerObservabilityAtom);
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
   const diagnosticsDescription = formatDiagnosticsDescription({
@@ -522,6 +537,93 @@ export function GeneralSettingsPanel() {
     settings.textGenerationModelSelection ?? null,
     DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection ?? null,
   );
+  const personalRelayPasswordConfigured = settings.personalPushRelay.passwordRedacted === true;
+  const personalRelayDraftValid =
+    personalRelayUrl.trim().length > 0 &&
+    (personalRelayPassword.trim().length >= 32 || personalRelayPasswordConfigured);
+  const personalRelayDirty =
+    personalRelayUrl.trim() !== settings.personalPushRelay.url ||
+    personalRelayPassword.trim().length > 0;
+
+  const savePersonalPushRelay = useCallback(async () => {
+    if (!primaryEnvironment || !personalRelayDraftValid || isSavingPersonalRelay) return;
+    setIsSavingPersonalRelay(true);
+    const result = await persistServerSettings({
+      environmentId: primaryEnvironment.environmentId,
+      input: {
+        patch: {
+          personalPushRelay: {
+            url: personalRelayUrl,
+            password: personalRelayPassword,
+            passwordRedacted:
+              personalRelayPassword.trim().length > 0 ? false : personalRelayPasswordConfigured,
+          },
+        },
+      },
+    });
+    setIsSavingPersonalRelay(false);
+    if (result._tag === "Failure") {
+      if (!isAtomCommandInterrupted(result)) {
+        toastManager.add({
+          type: "error",
+          title: "Could not save push relay",
+          description: "The relay settings were not changed.",
+        });
+      }
+      return;
+    }
+    setPersonalRelayPassword("");
+    toastManager.add({
+      type: "success",
+      title: "Push relay saved",
+      description: "The relay password is stored in this server's protected secret store.",
+    });
+  }, [
+    isSavingPersonalRelay,
+    persistServerSettings,
+    personalRelayDraftValid,
+    personalRelayPassword,
+    personalRelayPasswordConfigured,
+    personalRelayUrl,
+    primaryEnvironment,
+  ]);
+
+  const runPersonalPushRelayTest = useCallback(async () => {
+    if (!primaryEnvironment || personalRelayDirty || isTestingPersonalRelay) return;
+    setIsTestingPersonalRelay(true);
+    const result = await testPersonalPushRelay({
+      environmentId: primaryEnvironment.environmentId,
+      input: {},
+    });
+    setIsTestingPersonalRelay(false);
+    if (result._tag === "Failure") {
+      if (!isAtomCommandInterrupted(result)) {
+        toastManager.add({
+          type: "error",
+          title: "Could not test push relay",
+          description: "The server could not complete the connection test.",
+        });
+      }
+      return;
+    }
+    if (result.value.ok) {
+      toastManager.add({
+        type: "success",
+        title: "Push relay connected",
+        description: `Authenticated with ${result.value.relayUrl}.`,
+      });
+      return;
+    }
+    const description =
+      result.value.failure === "not_configured"
+        ? "Save both the relay URL and password first."
+        : result.value.failure === "unauthorized"
+          ? "The relay rejected the saved password."
+          : result.value.failure === "unreachable"
+            ? "The relay could not be reached from this server."
+            : `The relay returned an unexpected response${result.value.status ? ` (${result.value.status})` : ""}.`;
+    toastManager.add({ type: "error", title: "Push relay test failed", description });
+  }, [personalRelayDirty, primaryEnvironment, isTestingPersonalRelay, testPersonalPushRelay]);
 
   return (
     <SettingsPageContainer>
@@ -957,6 +1059,68 @@ export function GeneralSettingsPanel() {
                   });
                 }}
               />
+            </div>
+          }
+        />
+      </SettingsSection>
+
+      <SettingsSection title="Notifications">
+        <SettingsRow
+          title="Personal push relay"
+          description="Route mobile notifications and Live Activity updates through your tailnet relay using its 32-character-or-longer password."
+          control={
+            <div className="flex w-full max-w-md flex-col gap-2">
+              <Input
+                value={personalRelayUrl}
+                onChange={(event) => setPersonalRelayUrl(event.target.value)}
+                placeholder="https://push-relay.example.ts.net"
+                inputMode="url"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                aria-label="Personal push relay URL"
+              />
+              <Input
+                type="password"
+                value={personalRelayPassword}
+                onChange={(event) => setPersonalRelayPassword(event.target.value)}
+                placeholder={
+                  personalRelayPasswordConfigured
+                    ? "Password saved — enter a new one to replace it"
+                    : "Relay password"
+                }
+                autoComplete="new-password"
+                minLength={32}
+                spellCheck={false}
+                aria-label="Personal push relay password"
+              />
+              <div className="flex justify-end gap-2">
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={
+                    !personalRelayPasswordConfigured ||
+                    personalRelayDirty ||
+                    isSavingPersonalRelay ||
+                    isTestingPersonalRelay
+                  }
+                  onClick={() => void runPersonalPushRelayTest()}
+                >
+                  {isTestingPersonalRelay ? "Testing…" : "Test connection"}
+                </Button>
+                <Button
+                  size="xs"
+                  disabled={
+                    !personalRelayDraftValid ||
+                    !personalRelayDirty ||
+                    isSavingPersonalRelay ||
+                    isTestingPersonalRelay
+                  }
+                  onClick={() => void savePersonalPushRelay()}
+                >
+                  {isSavingPersonalRelay ? "Saving…" : "Save"}
+                </Button>
+              </div>
             </div>
           }
         />

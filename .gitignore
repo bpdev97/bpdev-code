@@ -33,3 +33,5 @@ node_modules/
 *.log
 .env*
 !.env.example
+apps/push-relay/secrets/
+apps/push-relay/*.sqlite*

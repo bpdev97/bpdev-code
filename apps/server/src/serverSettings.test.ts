@@ -589,4 +589,55 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       );
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
+
+  it.effect("stores the personal push relay password outside settings.json", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+
+      const saved = yield* serverSettings.updateSettings({
+        personalPushRelay: {
+          url: "https://push.example.ts.net",
+          password: "relay-password-secret",
+          passwordRedacted: false,
+        },
+      });
+
+      assert.deepEqual(saved.personalPushRelay, {
+        url: "https://push.example.ts.net",
+        password: "relay-password-secret",
+        passwordRedacted: true,
+      });
+      assert.deepEqual(
+        ServerSettingsModule.redactServerSettingsForClient(saved).personalPushRelay,
+        {
+          url: "https://push.example.ts.net",
+          password: "",
+          passwordRedacted: true,
+        },
+      );
+
+      const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
+      assert.notInclude(raw, "relay-password-secret");
+      // @effect-diagnostics-next-line preferSchemaOverJson:off
+      assert.deepEqual(JSON.parse(raw).personalPushRelay, {
+        url: "https://push.example.ts.net",
+        passwordRedacted: true,
+      });
+
+      const urlUpdated = yield* serverSettings.updateSettings({
+        personalPushRelay: {
+          url: "https://push-2.example.ts.net",
+          password: "",
+          passwordRedacted: true,
+        },
+      });
+      assert.deepEqual(urlUpdated.personalPushRelay, {
+        url: "https://push-2.example.ts.net",
+        password: "relay-password-secret",
+        passwordRedacted: true,
+      });
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
 });

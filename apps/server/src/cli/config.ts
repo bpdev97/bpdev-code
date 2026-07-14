@@ -8,6 +8,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as LogLevel from "effect/LogLevel";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
 import * as SchemaTransformation from "effect/SchemaTransformation";
@@ -126,6 +127,15 @@ const EnvServerConfig = Config.all({
   ),
   tailscaleServePort: Config.port("T3CODE_TAILSCALE_SERVE_PORT").pipe(
     Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
+  personalPushRelayUrl: Config.string("T3CODE_PERSONAL_PUSH_RELAY_URL").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
+  personalPushRelayToken: Config.redacted("T3CODE_PERSONAL_PUSH_RELAY_TOKEN").pipe(
+    Config.option,
+    Config.map(Option.map(Redacted.value)),
     Config.map(Option.getOrUndefined),
   ),
 });
@@ -366,6 +376,8 @@ export const resolveServerConfig = (
       logWebSocketEvents,
       tailscaleServeEnabled,
       tailscaleServePort,
+      ...(env.personalPushRelayUrl ? { personalPushRelayUrl: env.personalPushRelayUrl } : {}),
+      ...(env.personalPushRelayToken ? { personalPushRelayToken: env.personalPushRelayToken } : {}),
     };
 
     return config;

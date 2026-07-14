@@ -29,6 +29,7 @@ import * as Stream from "effect/Stream";
 import * as Tracer from "effect/Tracer";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import {
   OrchestrationEngineService,
@@ -45,6 +46,7 @@ import {
   PUBLISH_AGENT_ACTIVITY_SECRET,
 } from "../cloud/config.ts";
 import * as AgentAwarenessRelay from "./AgentAwarenessRelay.ts";
+import * as ServerSettings from "../serverSettings.ts";
 
 const state: RelayAgentActivityState = {
   environmentId: "env" as RelayAgentActivityState["environmentId"],
@@ -502,6 +504,8 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
         } satisfies ExecutionEnvironmentDescriptor;
 
         const layer = Layer.mergeAll(
+          ServerConfig.layerTest(process.cwd(), { prefix: "agent-awareness-relay-test-" }),
+          ServerSettings.layerTest(),
           Layer.succeed(ServerSecretStore.ServerSecretStore, secrets.store),
           Layer.succeed(ServerEnvironment.ServerEnvironment, {
             getEnvironmentId: Effect.succeed(environmentId),
@@ -650,6 +654,8 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
         );
 
         const layer = Layer.mergeAll(
+          ServerConfig.layerTest(process.cwd(), { prefix: "agent-awareness-relay-test-" }),
+          ServerSettings.layerTest(),
           Layer.succeed(ServerSecretStore.ServerSecretStore, secrets.store),
           Layer.succeed(ServerEnvironment.ServerEnvironment, {
             getEnvironmentId: Effect.succeed(environmentId),
