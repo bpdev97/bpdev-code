@@ -25,7 +25,32 @@ them:
 mkdir -p secrets
 openssl rand -base64 32 > secrets/relay-password
 chmod 600 secrets/relay-password secrets/AuthKey_KEYID.p8
-docker compose --env-file .env -f compose.example.yml up -d --build
+docker compose --env-file .env -f compose.example.yml up -d --pull always
+```
+
+The compose file pulls `ghcr.io/bpdev97/bpdev-code-push-relay:latest`. The image is published for
+Linux AMD64 and ARM64 whenever relay code reaches `main`. Every build also has an immutable
+`sha-<git-commit>` tag; set `RELAY_IMAGE` in `.env` to one of those tags or a digest when you want a
+pinned deployment.
+
+The first package publication may be private. In that case, either make the package public once in
+GitHub's package settings or log the homelab host in with a classic personal access token that has
+`read:packages`:
+
+```sh
+printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username bpdev97 --password-stdin
+```
+
+Public GHCR packages can be pulled without logging in. Publishing uses the repository's short-lived
+`GITHUB_TOKEN`; no registry credential needs to be added to Actions secrets.
+
+To build locally instead, run this from the repository root and point the compose file at the local
+tag:
+
+```sh
+docker build -f apps/push-relay/Dockerfile -t bpdev-code-push-relay:local .
+RELAY_IMAGE=bpdev-code-push-relay:local \
+  docker compose --env-file apps/push-relay/.env -f apps/push-relay/compose.example.yml up -d
 ```
 
 The Apple Team ID, Key ID, bundle ID, and APNs environment are identifiers, not secrets. The `.p8`

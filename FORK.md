@@ -64,6 +64,7 @@ feature.
 Fork-owned paths:
 
 - `.dockerignore`
+- `.github/workflows/personal-push-relay-image.yml`
 - `apps/push-relay/`
 - `apps/server/src/personalPush/`
 - `docs/fork/personal-push-relay.md`

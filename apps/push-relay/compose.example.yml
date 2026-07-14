@@ -1,8 +1,6 @@
 services:
   push-relay:
-    build:
-      context: ../..
-      dockerfile: apps/push-relay/Dockerfile
+    image: ${RELAY_IMAGE:-ghcr.io/bpdev97/bpdev-code-push-relay:latest}
     restart: unless-stopped
     init: true
     environment:
