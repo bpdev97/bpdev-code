@@ -25,6 +25,7 @@ const emitXAiPromptCompleteThenHang = process.env.T3_ACP_EMIT_XAI_PROMPT_COMPLET
 const emitForeignSessionUpdates = process.env.T3_ACP_EMIT_FOREIGN_SESSION_UPDATES === "1";
 const hangPromptForever = process.env.T3_ACP_HANG_PROMPT_FOREVER === "1";
 const hangFirstPromptForever = process.env.T3_ACP_HANG_FIRST_PROMPT_FOREVER === "1";
+const emitMessageThenHangUntilSteer = process.env.T3_ACP_EMIT_MESSAGE_THEN_HANG_UNTIL_STEER === "1";
 const emitLateUpdateAfterCancel = process.env.T3_ACP_EMIT_LATE_UPDATE_AFTER_CANCEL === "1";
 const omitXAiPromptCompleteStopReason =
   process.env.T3_ACP_OMIT_XAI_PROMPT_COMPLETE_STOP_REASON === "1";
@@ -69,6 +70,13 @@ function promptIdFromRequestMeta(
   }
   const promptId = meta.promptId ?? meta.requestId;
   return typeof promptId === "string" && promptId.length > 0 ? promptId : undefined;
+}
+
+function textFromPrompt(request: Pick<AcpSchema.PromptRequest, "prompt">): string {
+  return request.prompt
+    .flatMap((block) => (block.type === "text" ? [block.text] : []))
+    .join("\n")
+    .trim();
 }
 
 function logExit(reason: string): void {
@@ -542,6 +550,28 @@ const program = Effect.gen(function* () {
           });
         }
         return yield* Effect.never;
+      }
+
+      if (emitMessageThenHangUntilSteer && promptCount === 1) {
+        yield* agent.client.sessionUpdate({
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "waiting for steer" },
+          },
+        });
+        return yield* Effect.never;
+      }
+
+      if (emitMessageThenHangUntilSteer && textFromPrompt(request).startsWith("/steer ")) {
+        yield* agent.client.sessionUpdate({
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "steer accepted" },
+          },
+        });
+        return { stopReason: "end_turn" };
       }
 
       if (hangPromptForever || (hangFirstPromptForever && promptCount === 1)) {
