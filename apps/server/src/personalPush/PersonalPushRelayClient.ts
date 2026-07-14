@@ -6,16 +6,18 @@ import {
   type RelayDeviceRegistrationRequest,
   type RelayLiveActivityRegistrationRequest,
 } from "@t3tools/contracts/relay";
+import type { ServerSettings } from "@t3tools/contracts/settings";
 import * as Data from "effect/Data";
-import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
+import * as Option from "effect/Option";
 import type * as Schema from "effect/Schema";
 
 import * as ServerConfig from "../config.ts";
+import * as ServerSettingsModule from "../serverSettings.ts";
 
 export class PersonalPushRelayRequestError extends Data.TaggedError(
   "PersonalPushRelayRequestError",
@@ -48,11 +50,6 @@ export type PersonalPushConfig = Pick<
   "personalPushRelayUrl" | "personalPushRelayToken"
 >;
 
-export const PersonalPushConfig = Context.Reference<PersonalPushConfig>(
-  "t3/personalPush/PersonalPushConfig",
-  { defaultValue: () => ({}) },
-);
-
 export function configFromServerConfig(
   config: ServerConfig.ServerConfig["Service"],
 ): PersonalPushConfig {
@@ -63,6 +60,39 @@ export function configFromServerConfig(
       : {}),
   };
 }
+
+export function configFromSettings(
+  settings: ServerSettings,
+  fallback: PersonalPushConfig = {},
+): PersonalPushConfig {
+  const saved = settings.personalPushRelay;
+  if (!saved.url && !saved.password && !saved.passwordRedacted) return fallback;
+  return {
+    ...(saved.url ? { personalPushRelayUrl: saved.url } : {}),
+    ...(saved.password ? { personalPushRelayToken: saved.password } : {}),
+  };
+}
+
+export function makeFromRuntime(
+  config: ServerConfig.ServerConfig["Service"],
+  settingsService: ServerSettingsModule.ServerSettingsService["Service"],
+) {
+  return settingsService.getSettings.pipe(
+    Effect.option,
+    Effect.map((settings) =>
+      make(
+        Option.isSome(settings)
+          ? configFromSettings(settings.value, configFromServerConfig(config))
+          : configFromServerConfig(config),
+      ),
+    ),
+  );
+}
+
+export const makeFromServices = Effect.all([
+  ServerConfig.ServerConfig,
+  ServerSettingsModule.ServerSettingsService,
+]).pipe(Effect.flatMap(([config, settings]) => makeFromRuntime(config, settings)));
 
 export function make(config: PersonalPushConfig): PersonalPushRelayClient {
   const relayUrl = config.personalPushRelayUrl?.trim().replace(/\/+$/g, "") || null;

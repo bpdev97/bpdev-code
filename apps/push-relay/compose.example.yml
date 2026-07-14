@@ -11,7 +11,7 @@ services:
       APNS_BUNDLE_ID: ${APNS_BUNDLE_ID}
       APNS_ENVIRONMENT: ${APNS_ENVIRONMENT:-production}
       APNS_PRIVATE_KEY_FILE: /run/secrets/apns_key
-      RELAY_AUTH_TOKEN_FILE: /run/secrets/relay_auth_token
+      RELAY_AUTH_TOKEN_FILE: /run/secrets/relay_password
       DATABASE_PATH: /data/push-relay.sqlite
     ports:
       - "${TAILNET_BIND_ADDRESS}:8788:8788"
@@ -19,7 +19,7 @@ services:
       - push-relay-data:/data
     secrets:
       - apns_key
-      - relay_auth_token
+      - relay_password
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -34,5 +34,5 @@ volumes:
 secrets:
   apns_key:
     file: ${APNS_PRIVATE_KEY_PATH}
-  relay_auth_token:
-    file: ${RELAY_AUTH_TOKEN_PATH}
+  relay_password:
+    file: ${RELAY_PASSWORD_PATH}

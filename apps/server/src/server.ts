@@ -90,7 +90,6 @@ import {
 } from "./serverRuntimeState.ts";
 import { orchestrationHttpApiLayer } from "./orchestration/http.ts";
 import { personalPushRouteLayer } from "./personalPush/http.ts";
-import * as PersonalPushRelay from "./personalPush/PersonalPushRelayClient.ts";
 import * as NetService from "@t3tools/shared/Net";
 import * as RelayClient from "@t3tools/shared/relayClient";
 import { disableTailscaleServe, ensureTailscaleServe } from "@t3tools/tailscale";
@@ -164,21 +163,7 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(ProviderCommandReactorLive),
   Layer.provideMerge(CheckpointReactorLive),
   Layer.provideMerge(ThreadDeletionReactorLive),
-  Layer.provideMerge(
-    Layer.unwrap(
-      Effect.gen(function* () {
-        const config = yield* ServerConfig.ServerConfig;
-        return AgentAwarenessRelay.layer.pipe(
-          Layer.provide(
-            Layer.succeed(
-              PersonalPushRelay.PersonalPushConfig,
-              PersonalPushRelay.configFromServerConfig(config),
-            ),
-          ),
-        );
-      }),
-    ).pipe(Layer.provide(ServerSecretStore.layer)),
-  ),
+  Layer.provideMerge(AgentAwarenessRelay.layer.pipe(Layer.provide(ServerSecretStore.layer))),
   Layer.provideMerge(RuntimeReceiptBusLive),
 );
 

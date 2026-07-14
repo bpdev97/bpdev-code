@@ -15,7 +15,6 @@ import {
 } from "effect/unstable/http";
 
 import { authenticateRawRouteWithScope } from "../http.ts";
-import * as ServerConfig from "../config.ts";
 import * as PersonalPushRelay from "./PersonalPushRelayClient.ts";
 
 const decodeDevice = Schema.decodeUnknownOption(RelayDeviceRegistrationRequest);
@@ -33,7 +32,7 @@ const registerDevice = HttpRouter.add(
   "/api/personal-push/v1/devices",
   Effect.gen(function* () {
     yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
-    const client = PersonalPushRelay.make(yield* ServerConfig.ServerConfig);
+    const client = yield* PersonalPushRelay.makeFromServices;
     if (!client.configured) return relayUnavailable();
     const request = yield* HttpServerRequest.HttpServerRequest;
     const body = decodeDevice(yield* request.json);
@@ -54,7 +53,7 @@ const registerLiveActivity = HttpRouter.add(
   "/api/personal-push/v1/live-activities",
   Effect.gen(function* () {
     yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
-    const client = PersonalPushRelay.make(yield* ServerConfig.ServerConfig);
+    const client = yield* PersonalPushRelay.makeFromServices;
     if (!client.configured) return relayUnavailable();
     const request = yield* HttpServerRequest.HttpServerRequest;
     const body = decodeLiveActivity(yield* request.json);
@@ -75,7 +74,7 @@ const snapshot = HttpRouter.add(
   "/api/personal-push/v1/agent-activity",
   Effect.gen(function* () {
     yield* authenticateRawRouteWithScope(AuthOrchestrationReadScope);
-    const client = PersonalPushRelay.make(yield* ServerConfig.ServerConfig);
+    const client = yield* PersonalPushRelay.makeFromServices;
     if (!client.configured) return relayUnavailable();
     return yield* client
       .snapshot()

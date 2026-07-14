@@ -34,6 +34,7 @@ import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import * as ServerConfig from "../config.ts";
 import {
   PUBLISH_AGENT_ACTIVITY_SECRET,
   RELAY_ENVIRONMENT_CREDENTIAL_SECRET,
@@ -45,6 +46,7 @@ import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as PersonalPushRelay from "../personalPush/PersonalPushRelayClient.ts";
+import * as ServerSettings from "../serverSettings.ts";
 
 export class AgentAwarenessRelay extends Context.Service<
   AgentAwarenessRelay,
@@ -295,7 +297,8 @@ export const make = Effect.gen(function* () {
   const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
   const snapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
-  const personalPushRelay = PersonalPushRelay.make(yield* PersonalPushRelay.PersonalPushConfig);
+  const serverConfig = yield* ServerConfig.ServerConfig;
+  const serverSettings = yield* ServerSettings.ServerSettingsService;
   const crypto = yield* Crypto.Crypto;
   const cloudLinkKeyPair = yield* getOrCreateEnvironmentKeyPairFromSecretStore(secrets);
   const activeSnapshotPublishedRef = yield* Ref.make(false);
@@ -325,6 +328,8 @@ export const make = Effect.gen(function* () {
     Effect.map(isAgentActivityPublishingEnabled),
   );
 
+  const readPersonalPushRelay = PersonalPushRelay.makeFromRuntime(serverConfig, serverSettings);
+
   const makeRelayClient = (relayConfig: {
     readonly url: string;
     readonly environmentCredential: string;
@@ -347,6 +352,7 @@ export const make = Effect.gen(function* () {
       Effect.orElseSucceed(() => false),
     );
     const relayConfig = yield* readRelayConfig.pipe(Effect.orElseSucceed(() => null));
+    const personalPushRelay = yield* readPersonalPushRelay;
     const hostedRelayEnabled = publishAgentActivity && relayConfig !== null;
     if (!hostedRelayEnabled && !personalPushRelay.configured) {
       yield* Effect.logDebug("agent activity publish skipped; no enabled relay is configured", {
@@ -520,6 +526,7 @@ export const make = Effect.gen(function* () {
       Effect.orElseSucceed(() => false),
     );
     const relayConfig = yield* readRelayConfig.pipe(Effect.orElseSucceed(() => null));
+    const personalPushRelay = yield* readPersonalPushRelay;
     if ((!publishAgentActivity || !relayConfig) && !personalPushRelay.configured) {
       yield* Effect.logDebug("agent activity snapshot skipped; no enabled relay is configured");
       return false;
@@ -550,6 +557,7 @@ export const make = Effect.gen(function* () {
           yield* Ref.set(activeSnapshotPublishedRef, true);
           if (logEnabledWhenReady) {
             const relayConfig = yield* readRelayConfig.pipe(Effect.orElseSucceed(() => null));
+            const personalPushRelay = yield* readPersonalPushRelay;
             yield* Effect.logInfo("agent activity publishing enabled after link reconciliation", {
               hostedRelayUrl: relayConfig?.url,
               personalRelayUrl: personalPushRelay.relayUrl,
@@ -582,6 +590,7 @@ export const make = Effect.gen(function* () {
         readRelayConfig.pipe(Effect.orElseSucceed(() => null)),
         readPublishAgentActivityEnabled.pipe(Effect.orElseSucceed(() => false)),
       ]);
+      const personalPushRelay = yield* readPersonalPushRelay;
       const startupState = resolveAgentActivityPublishingStartupState({
         relayConfigured: relayConfig !== null,
         publishEnabled,

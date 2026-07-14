@@ -7,7 +7,7 @@ sanitized agent-awareness state to the container.
 
 ## Trust boundary
 
-- The phone never receives the relay bearer token or APNs provider key.
+- The phone never receives the relay password or APNs provider key.
 - The T3 server can call only the typed personal-push adapter routes exposed to authenticated mobile
   sessions.
 - The container accepts only device registration, Live Activity registration, snapshot reads, and
@@ -23,35 +23,39 @@ them:
 
 ```sh
 mkdir -p secrets
-openssl rand -hex 32 > secrets/relay-auth-token
-chmod 600 secrets/relay-auth-token secrets/AuthKey_KEYID.p8
+openssl rand -base64 32 > secrets/relay-password
+chmod 600 secrets/relay-password secrets/AuthKey_KEYID.p8
 docker compose --env-file .env -f compose.example.yml up -d --build
 ```
 
 The Apple Team ID, Key ID, bundle ID, and APNs environment are identifiers, not secrets. The `.p8`
-file and relay authentication token are secrets. Use an Apple key restricted to APNs when possible.
+file and relay password are secrets. Use an Apple key restricted to APNs when possible.
 Production/TestFlight builds use `APNS_ENVIRONMENT=production`; development-signed builds use
 `sandbox` and should use a separate relay instance and database. Device registrations whose bundle
 ID or APNs environment differs from the container configuration are rejected.
 
-Each machine running `t3` needs two environment variables. The token content must match the
-container's `relay-auth-token` file:
+On each machine running T3, open **Settings → General → Notifications** and enter the relay URL and
+the contents of `secrets/relay-password`. Save, then use **Test connection**. The password is stored
+in that T3 server's permission-restricted secret store; it is not written to `settings.json` or sent
+back to clients.
+
+Environment variables remain available for headless deployments. Saved settings take precedence:
 
 ```sh
 export T3CODE_PERSONAL_PUSH_RELAY_URL=http://100.x.y.z:8788
-export T3CODE_PERSONAL_PUSH_RELAY_TOKEN="$(cat /secure/path/relay-auth-token)"
+export T3CODE_PERSONAL_PUSH_RELAY_TOKEN="$(cat /secure/path/relay-password)"
 t3
 ```
 
-No `.p8` file is installed on a T3 server. Restart the mobile app and T3 servers after first
-configuration. The mobile settings registration status reflects whether at least one configured
-backend accepted the device.
+No `.p8` file is installed on a T3 server. Relay settings take effect without restarting T3. Restart
+the mobile app after first configuration so it immediately registers through the newly configured
+backend.
 
 ## Operations
 
 `GET /healthz` is the only unauthenticated route. Back up the `push-relay-data` volume if preserving
-registrations matters; otherwise the app re-registers them. Rotate the relay token by updating its
-secret file and every T3 server together, then recreate the container. Rotate or revoke the Apple
+registrations matters; otherwise the app re-registers them. Rotate the relay password by updating
+its secret file and every T3 server together, then recreate the container. Rotate or revoke the Apple
 key in the Apple Developer portal if the `.p8` is exposed.
 
 The protocol is versioned under `/v1`. Upstream maintenance should preserve the personal-push
