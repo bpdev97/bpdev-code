@@ -719,6 +719,100 @@ describe("ProviderRuntimeIngestion", () => {
     expect(message?.streaming).toBe(false);
   });
 
+  it("coalesces canonical reasoning deltas into a visible thinking activity", async () => {
+    const harness = await createHarness();
+    const threadId = asThreadId("thread-1");
+    const turnId = asTurnId("turn-reasoning");
+
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-reasoning-delta-1"),
+      provider: ProviderDriverKind.make("hermes"),
+      createdAt: "2026-01-01T00:00:01.000Z",
+      threadId,
+      turnId,
+      payload: {
+        streamKind: "reasoning_text",
+        delta: "Inspecting the provider ",
+      },
+    });
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-reasoning-delta-2"),
+      provider: ProviderDriverKind.make("hermes"),
+      createdAt: "2026-01-01T00:00:02.000Z",
+      threadId,
+      turnId,
+      payload: {
+        streamKind: "reasoning_text",
+        delta: "event stream.",
+      },
+    });
+
+    const activityId = "reasoning:thread-1:turn-reasoning:reasoning_text";
+    const thread = await waitForThread(harness.readModel, (entry) =>
+      entry.activities.some(
+        (activity: ProviderRuntimeTestActivity) =>
+          activity.id === activityId &&
+          typeof activity.payload === "object" &&
+          activity.payload !== null &&
+          "detail" in activity.payload &&
+          activity.payload.detail === "Inspecting the provider event stream.",
+      ),
+    );
+    const reasoningActivities = thread.activities.filter(
+      (activity: ProviderRuntimeTestActivity) => activity.id === activityId,
+    );
+
+    expect(reasoningActivities).toHaveLength(1);
+    expect(reasoningActivities[0]).toMatchObject({
+      kind: "task.progress",
+      summary: "Thinking",
+      tone: "info",
+      turnId,
+      createdAt: "2026-01-01T00:00:02.000Z",
+      payload: {
+        taskId: "turn-reasoning",
+        summary: "Thinking",
+        detail: "Inspecting the provider event stream.",
+        streamKind: "reasoning_text",
+      },
+    });
+
+    harness.emit({
+      type: "turn.aborted",
+      eventId: asEventId("evt-reasoning-aborted"),
+      provider: ProviderDriverKind.make("hermes"),
+      createdAt: "2026-01-01T00:00:03.000Z",
+      threadId,
+      turnId,
+      payload: { reason: "cancelled" },
+    });
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-reasoning-after-abort"),
+      provider: ProviderDriverKind.make("hermes"),
+      createdAt: "2026-01-01T00:00:04.000Z",
+      threadId,
+      turnId,
+      payload: {
+        streamKind: "reasoning_text",
+        delta: "Fresh reasoning.",
+      },
+    });
+
+    await waitForThread(harness.readModel, (entry) =>
+      entry.activities.some(
+        (activity: ProviderRuntimeTestActivity) =>
+          activity.id === activityId &&
+          typeof activity.payload === "object" &&
+          activity.payload !== null &&
+          "detail" in activity.payload &&
+          activity.payload.detail === "Fresh reasoning.",
+      ),
+    );
+  });
+
   it("uses assistant item completion detail when no assistant deltas were streamed", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
