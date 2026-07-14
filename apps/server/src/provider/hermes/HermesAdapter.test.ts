@@ -208,6 +208,92 @@ it.layer(testLayer)("HermesAdapter", (it) => {
     }),
   );
 
+  it.effect("keeps assistant item ids unique after resuming the same Hermes session", () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("hermes-resume-item-identity");
+      const binaryPath = yield* Effect.promise(() => makeMockHermesWrapper("default"));
+      const adapter = yield* makeHermesAdapter(decodeSettings({ binaryPath, profile: "default" }));
+      const events: ProviderRuntimeEvent[] = [];
+      const eventFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
+        Effect.sync(() => events.push(event)),
+      ).pipe(Effect.forkChild);
+
+      const firstSession = yield* adapter.startSession({
+        threadId,
+        cwd: process.cwd(),
+        runtimeMode: "approval-required",
+      });
+      yield* adapter.sendTurn({ threadId, input: "first prompt", attachments: [] });
+      yield* adapter.stopSession(threadId);
+
+      yield* adapter.startSession({
+        threadId,
+        cwd: process.cwd(),
+        runtimeMode: "approval-required",
+        resumeCursor: firstSession.resumeCursor,
+      });
+      yield* adapter.sendTurn({ threadId, input: "second prompt", attachments: [] });
+
+      const assistantDeltas = events.filter(
+        (event) => event.type === "content.delta" && event.payload.streamKind === "assistant_text",
+      );
+      assert.lengthOf(assistantDeltas, 2);
+      assert.notEqual(String(assistantDeltas[0]?.itemId), String(assistantDeltas[1]?.itemId));
+
+      yield* Fiber.interrupt(eventFiber);
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
+  it.effect("delivers follow-up steering while the active Hermes prompt is still running", () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("hermes-active-steer");
+      const binaryPath = yield* Effect.promise(() =>
+        makeMockHermesWrapper("default", {
+          T3_ACP_EMIT_MESSAGE_THEN_HANG_UNTIL_STEER: "1",
+        }),
+      );
+      const adapter = yield* makeHermesAdapter(decodeSettings({ binaryPath }));
+      const firstDelta =
+        yield* Deferred.make<Extract<ProviderRuntimeEvent, { type: "content.delta" }>>();
+      const steerDelta =
+        yield* Deferred.make<Extract<ProviderRuntimeEvent, { type: "content.delta" }>>();
+      const eventFiber = yield* Stream.runForEach(adapter.streamEvents, (event) => {
+        if (event.type !== "content.delta") return Effect.void;
+        if (event.payload.delta === "waiting for steer") {
+          return Deferred.succeed(firstDelta, event).pipe(Effect.ignore);
+        }
+        if (event.payload.delta === "steer accepted") {
+          return Deferred.succeed(steerDelta, event).pipe(Effect.ignore);
+        }
+        return Effect.void;
+      }).pipe(Effect.forkChild);
+
+      yield* adapter.startSession({
+        threadId,
+        cwd: process.cwd(),
+        runtimeMode: "approval-required",
+      });
+      const firstTurnFiber = yield* adapter
+        .sendTurn({ threadId, input: "start a long task", attachments: [] })
+        .pipe(Effect.forkChild);
+      const initial = yield* Deferred.await(firstDelta).pipe(Effect.timeout("2 seconds"));
+
+      yield* adapter
+        .sendTurn({ threadId, input: "change direction", attachments: [] })
+        .pipe(Effect.timeout("2 seconds"));
+      const steered = yield* Deferred.await(steerDelta).pipe(Effect.timeout("2 seconds"));
+
+      assert.equal(steered.turnId, initial.turnId);
+      assert.notEqual(String(steered.itemId), String(initial.itemId));
+
+      yield* adapter.interruptTurn(threadId, initial.turnId);
+      yield* Fiber.join(firstTurnFiber).pipe(Effect.timeout("2 seconds"));
+      yield* Fiber.interrupt(eventFiber);
+      yield* adapter.stopSession(threadId);
+    }).pipe(TestClock.withLive),
+  );
+
   it.effect("forwards image attachments as ACP image content", () =>
     Effect.gen(function* () {
       const threadId = ThreadId.make("hermes-image");

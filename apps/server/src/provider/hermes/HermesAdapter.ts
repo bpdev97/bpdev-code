@@ -77,6 +77,7 @@ interface PendingApproval {
 interface HermesSessionContext {
   readonly threadId: ThreadId;
   readonly acpSessionId: string;
+  readonly runtimeInstanceId: string;
   readonly scope: Scope.Closeable;
   readonly acp: AcpSessionRuntime.AcpSessionRuntime["Service"];
   readonly pendingApprovals: Map<ApprovalRequestId, PendingApproval>;
@@ -113,6 +114,10 @@ function appendPromptResultToTurn(
         turn.id === turnId ? { ...turn, items: [...turn.items, { prompt, response }] } : turn,
       )
     : [...context.turns, { id: turnId, items: [{ prompt, response }] }];
+}
+
+function assistantItemIdForRuntime(context: HermesSessionContext, itemId: string): string {
+  return `hermes:${context.runtimeInstanceId}:${itemId}`;
 }
 
 export const makeHermesAdapter = Effect.fn("makeHermesAdapter")(function* (
@@ -410,6 +415,7 @@ export const makeHermesAdapter = Effect.fn("makeHermesAdapter")(function* (
         const context: HermesSessionContext = {
           threadId: input.threadId,
           acpSessionId: started.sessionId,
+          runtimeInstanceId: yield* randomUUIDv4,
           scope: sessionScope,
           acp,
           pendingApprovals,
@@ -450,7 +456,7 @@ export const makeHermesAdapter = Effect.fn("makeHermesAdapter")(function* (
                     provider: HERMES_DRIVER_KIND,
                     threadId: context.threadId,
                     turnId,
-                    itemId: event.itemId,
+                    itemId: assistantItemIdForRuntime(context, event.itemId),
                     lifecycle:
                       event._tag === "AssistantItemStarted" ? "item.started" : "item.completed",
                   }),
@@ -495,7 +501,9 @@ export const makeHermesAdapter = Effect.fn("makeHermesAdapter")(function* (
                     provider: HERMES_DRIVER_KIND,
                     threadId: context.threadId,
                     turnId,
-                    ...(event.itemId ? { itemId: event.itemId } : {}),
+                    ...(event.itemId
+                      ? { itemId: assistantItemIdForRuntime(context, event.itemId) }
+                      : {}),
                     streamKind: event.streamKind,
                     text: event.text,
                     rawPayload: event.rawPayload,
@@ -623,17 +631,28 @@ export const makeHermesAdapter = Effect.fn("makeHermesAdapter")(function* (
               payload: context.currentModelId ? { model: context.currentModelId } : {},
             });
           }
+          const isSteering = steeringTurnId !== undefined;
+          const acpPrompt =
+            isSteering && text && imageParts.length === 0
+              ? ([
+                  { type: "text" as const, text: `/steer ${text}` },
+                ] satisfies Array<EffectAcpSchema.ContentBlock>)
+              : prompt;
           return {
             acp: context.acp,
             acpSessionId: context.acpSessionId,
-            prompt,
+            prompt: acpPrompt,
             turnId,
             resumeCursor: context.session.resumeCursor,
+            isSteering,
           };
         }),
       );
 
-      return yield* prepared.acp.prompt({ prompt: prepared.prompt }).pipe(
+      const promptEffect = prepared.isSteering
+        ? prepared.acp.promptWhileActive({ prompt: prepared.prompt })
+        : prepared.acp.prompt({ prompt: prepared.prompt });
+      return yield* promptEffect.pipe(
         Effect.mapError((cause) =>
           mapAcpToAdapterError(HERMES_DRIVER_KIND, input.threadId, "session/prompt", cause),
         ),

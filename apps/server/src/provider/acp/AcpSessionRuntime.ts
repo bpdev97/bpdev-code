@@ -196,6 +196,15 @@ export class AcpSessionRuntime extends Context.Service<
       payload: Omit<EffectAcpSchema.PromptRequest, "sessionId">,
     ) => Effect.Effect<EffectAcpSchema.PromptResponse, EffectAcpErrors.AcpError>;
     /**
+     * Sends a prompt without waiting for the active prompt RPC to settle.
+     *
+     * This is only for agents that explicitly support in-flight steering through
+     * a concurrent `session/prompt` request. Normal turns must use `prompt`.
+     */
+    readonly promptWhileActive: (
+      payload: Omit<EffectAcpSchema.PromptRequest, "sessionId">,
+    ) => Effect.Effect<EffectAcpSchema.PromptResponse, EffectAcpErrors.AcpError>;
+    /**
      * Sends a real ACP `session/cancel` notification for the active session.
      * @see https://agentclientprotocol.com/protocol/schema#session/cancel
      */
@@ -760,6 +769,30 @@ export const make = (
             );
           }),
         ),
+      promptWhileActive: (payload) =>
+        Effect.gen(function* () {
+          const started = yield* getStartedState;
+          yield* closeActiveAssistantSegment({
+            queue: eventQueue,
+            assistantSegmentRef,
+          });
+          const requestPayload = {
+            sessionId: started.sessionId,
+            ...payload,
+          } satisfies EffectAcpSchema.PromptRequest;
+          return yield* runLoggedRequest(
+            "session/prompt",
+            requestPayload,
+            acp.agent.prompt(requestPayload),
+          ).pipe(
+            Effect.ensuring(
+              closeActiveAssistantSegment({
+                queue: eventQueue,
+                assistantSegmentRef,
+              }),
+            ),
+          );
+        }),
       cancel: getStartedState.pipe(
         Effect.flatMap((started) =>
           Effect.gen(function* () {

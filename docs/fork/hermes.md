@@ -68,7 +68,14 @@ persist approval accidentally.
 
 Hermes `agent_message_chunk` and `agent_thought_chunk` notifications map to T3 assistant and
 reasoning streams. Tool calls, plans, permissions, and terminal turn states use the shared canonical
-ACP event constructors.
+ACP event constructors. ACP message chunks do not carry item IDs, so T3 synthesizes them. Hermes
+namespaces those IDs by the local runtime incarnation as well as the ACP session and segment; a
+resumed Hermes session must never reuse a persisted T3 message ID from an earlier process.
+
+When a user follows up while a Hermes prompt is still running, T3 sends Hermes's `/steer` command
+through a concurrent ACP prompt request. The ordinary ACP prompt path remains serialized. This lets
+Hermes receive guidance for a stalled or long-running turn instead of leaving the follow-up queued
+behind the very RPC it needs to steer.
 
 ## Authentication and setup
 
@@ -87,6 +94,10 @@ hermes --profile <profile> model
 - Existing ACP cursors must remain loadable after gateway support is added.
 - Provider output must flow through canonical runtime events; direct UI message writes bypass
   persistence, reconnect semantics, and push notifications.
+- Synthetic assistant item IDs must remain unique across ACP process restarts that resume the same
+  Hermes session.
+- Active-turn follow-ups must use the explicit concurrent steering path; ordinary Hermes prompts
+  remain serialized.
 - Session approval must never become permanent approval.
 - Health refreshes may rerun the version command but must reuse cached model discovery.
 - Unknown future provider configuration must continue to round-trip through the generic instance
