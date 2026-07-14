@@ -21,15 +21,39 @@ export interface ApnsResult {
   readonly invalidToken: boolean;
 }
 
-interface ApnsRequest {
+export interface ApnsPreparedRequest {
   readonly token: string;
   readonly topic: string;
   readonly pushType: "alert" | "liveactivity";
   readonly priority: "5" | "10";
   readonly payload: unknown;
   readonly environment: ApnsEnvironment;
-  readonly apnsId: string;
   readonly collapseId?: string;
+}
+
+interface ApnsRequest extends ApnsPreparedRequest {
+  readonly apnsId: string;
+}
+
+export interface NotificationInput {
+  readonly token: string;
+  readonly bundleId?: string | null;
+  readonly environment?: ApnsEnvironment | null;
+  readonly state: RelayAgentActivityState;
+}
+
+export interface LiveActivityInput {
+  readonly token: string;
+  readonly bundleId?: string | null;
+  readonly environment?: ApnsEnvironment | null;
+  readonly aggregate: RelayAgentActivityAggregateState | null;
+  readonly alert: { readonly title: string; readonly body: string } | null;
+}
+
+export interface ApnsDeliveryClient {
+  readonly ready: () => Promise<void>;
+  readonly sendNotification: (input: NotificationInput) => Promise<ApnsResult>;
+  readonly sendLiveActivity: (input: LiveActivityInput) => Promise<ApnsResult>;
 }
 
 interface CachedProviderToken {
@@ -37,7 +61,7 @@ interface CachedProviderToken {
   readonly createdAt: number;
 }
 
-export class ApnsClient {
+export class ApnsClient implements ApnsDeliveryClient {
   readonly #config: RelayConfig["apns"];
   #key: Promise<CryptoKey> | null = null;
   #token: CachedProviderToken | null = null;
@@ -136,7 +160,7 @@ export class ApnsClient {
     });
   }
 
-  async #send(input: Omit<ApnsRequest, "apnsId">): Promise<ApnsResult> {
+  async #send(input: ApnsPreparedRequest): Promise<ApnsResult> {
     const request = { ...input, apnsId: NodeCrypto.randomUUID() };
     const sendAttempt = async (attempt: number): Promise<ApnsResult> => {
       try {
@@ -152,74 +176,78 @@ export class ApnsClient {
     return sendAttempt(0);
   }
 
-  sendNotification(input: {
-    readonly token: string;
-    readonly bundleId?: string | null;
-    readonly environment?: ApnsEnvironment | null;
-    readonly state: RelayAgentActivityState;
-  }): Promise<ApnsResult> {
-    return this.#send({
-      token: input.token,
-      topic: input.bundleId ?? this.#config.bundleId,
-      pushType: "alert",
-      priority: "10",
-      environment: input.environment ?? this.#config.environment,
-      collapseId: NodeCrypto.createHash("sha256")
-        .update(`${input.state.environmentId}:${input.state.threadId}`)
-        .digest("hex"),
-      payload: {
-        aps: {
-          alert: {
-            title: input.state.threadTitle,
-            body: `${statusForPhase(input.state.phase)}: ${input.state.projectTitle}`,
-          },
-          sound: "default",
-        },
-        environmentId: input.state.environmentId,
-        threadId: input.state.threadId,
-        deepLink: input.state.deepLink,
-      },
-    });
+  sendNotification(input: NotificationInput): Promise<ApnsResult> {
+    return this.#send(makeNotificationRequest(this.#config, input));
   }
 
-  sendLiveActivity(input: {
-    readonly token: string;
-    readonly bundleId?: string | null;
-    readonly environment?: ApnsEnvironment | null;
-    readonly aggregate: RelayAgentActivityAggregateState | null;
-    readonly alert: { readonly title: string; readonly body: string } | null;
-  }): Promise<ApnsResult> {
-    const timestamp = Math.floor(Date.now() / 1_000);
-    const event = input.aggregate?.activeCount ? "update" : "end";
-    const contentState = input.aggregate
-      ? { "content-state": { name: "AgentActivity", props: JSON.stringify(input.aggregate) } }
-      : {};
-    return this.#send({
-      token: input.token,
-      topic: `${input.bundleId ?? this.#config.bundleId}.push-type.liveactivity`,
-      pushType: "liveactivity",
-      priority: event === "update" && input.alert === null ? "5" : "10",
-      environment: input.environment ?? this.#config.environment,
-      payload: {
-        aps:
-          event === "update"
-            ? {
-                timestamp,
-                event,
-                ...contentState,
-                "stale-date": timestamp + 10 * 60,
-                ...(input.alert ? { alert: { ...input.alert, sound: "default" } } : {}),
-              }
-            : {
-                timestamp,
-                event,
-                ...contentState,
-                "dismissal-date": timestamp + (input.aggregate ? 5 * 60 : 15),
-                ...(input.alert ? { alert: { ...input.alert, sound: "default" } } : {}),
-              },
-      },
-    });
+  sendLiveActivity(input: LiveActivityInput): Promise<ApnsResult> {
+    return this.#send(makeLiveActivityRequest(this.#config, input));
   }
+}
+
+export function makeNotificationRequest(
+  config: RelayConfig["apns"],
+  input: NotificationInput,
+): ApnsPreparedRequest {
+  return {
+    token: input.token,
+    topic: input.bundleId ?? config.bundleId,
+    pushType: "alert",
+    priority: "10",
+    environment: input.environment ?? config.environment,
+    collapseId: NodeCrypto.createHash("sha256")
+      .update(`${input.state.environmentId}:${input.state.threadId}`)
+      .digest("hex"),
+    payload: {
+      aps: {
+        alert: {
+          title: input.state.threadTitle,
+          body: `${statusForPhase(input.state.phase)}: ${input.state.projectTitle}`,
+        },
+        sound: "default",
+      },
+      environmentId: input.state.environmentId,
+      threadId: input.state.threadId,
+      deepLink: input.state.deepLink,
+    },
+  };
+}
+
+export function makeLiveActivityRequest(
+  config: RelayConfig["apns"],
+  input: LiveActivityInput,
+  now = Date.now(),
+): ApnsPreparedRequest {
+  const timestamp = Math.floor(now / 1_000);
+  const event = input.aggregate?.activeCount ? "update" : "end";
+  const contentState = input.aggregate
+    ? { "content-state": { name: "AgentActivity", props: JSON.stringify(input.aggregate) } }
+    : {};
+  return {
+    token: input.token,
+    topic: `${input.bundleId ?? config.bundleId}.push-type.liveactivity`,
+    pushType: "liveactivity",
+    priority: event === "update" && input.alert === null ? "5" : "10",
+    environment: input.environment ?? config.environment,
+    payload: {
+      aps:
+        event === "update"
+          ? {
+              timestamp,
+              event,
+              ...contentState,
+              "stale-date": timestamp + 10 * 60,
+              ...(input.alert ? { alert: { ...input.alert, sound: "default" } } : {}),
+            }
+          : {
+              timestamp,
+              event,
+              ...contentState,
+              "dismissal-date": timestamp + (input.aggregate ? 5 * 60 : 15),
+              ...(input.alert ? { alert: { ...input.alert, sound: "default" } } : {}),
+            },
+    },
+  };
 }
 
 function statusForPhase(phase: RelayAgentActivityState["phase"]): string {

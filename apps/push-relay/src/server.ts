@@ -8,7 +8,7 @@ import {
 } from "@t3tools/contracts/relay";
 import * as Schema from "effect/Schema";
 
-import { ApnsClient, liveActivityAlert, shouldNotify } from "./apns.ts";
+import { ApnsClient, type ApnsDeliveryClient, liveActivityAlert, shouldNotify } from "./apns.ts";
 import type { RelayConfig } from "./config.ts";
 import { RelayStore, type DeliveryTarget } from "./store.ts";
 
@@ -86,9 +86,16 @@ export interface PushRelayServer {
   readonly close: () => Promise<void>;
 }
 
-export async function startServer(config: RelayConfig): Promise<PushRelayServer> {
+export interface PushRelayServerDependencies {
+  readonly apns?: ApnsDeliveryClient;
+}
+
+export async function startServer(
+  config: RelayConfig,
+  dependencies: PushRelayServerDependencies = {},
+): Promise<PushRelayServer> {
   const store = new RelayStore(config.databasePath);
-  const apns = new ApnsClient(config.apns);
+  const apns = dependencies.apns ?? new ApnsClient(config.apns);
   await apns.ready();
   const expectedTokenDigest = tokenDigest(config.authToken);
   const recentLiveActivityRegistrations = new Map<

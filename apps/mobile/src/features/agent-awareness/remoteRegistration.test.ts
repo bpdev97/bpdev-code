@@ -752,6 +752,63 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     }).pipe(Effect.provide(relayTestLayer));
   });
 
+  it.effect("registers notifications through a direct personal server connection", () => {
+    const fetchMock = vi.fn((_request: RequestInfo | URL, _init?: RequestInit) =>
+      Promise.resolve(Response.json({ ok: true })),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    registerAgentAwarenessConnection(savedConnection());
+
+    return Effect.gen(function* () {
+      yield* runBackgroundOperations();
+
+      const call = fetchMock.mock.calls.find(([request]) =>
+        String(request).endsWith("/api/personal-push/v1/devices"),
+      );
+      expect(call).toBeDefined();
+      const [, init] = call as unknown as [string, RequestInit];
+      expect(init.method).toBe("POST");
+      expect(new Headers(init.headers).get("authorization")).toBe("Bearer bearer-token");
+      expect(JSON.parse(String(init.body))).toMatchObject({
+        deviceId: "device-1",
+        pushToken: "apns-token",
+        preferences: { notificationsEnabled: true },
+      });
+      expect(getAgentAwarenessRegistrationStatus()).toBe("registered");
+    }).pipe(Effect.provide(relayTestLayer));
+  });
+
+  it.effect(
+    "registers Live Activity update tokens through a direct personal server connection",
+    () => {
+      const fetchMock = vi.fn((_request: RequestInfo | URL, _init?: RequestInit) =>
+        Promise.resolve(Response.json({ ok: true })),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      registerAgentAwarenessConnection(savedConnection());
+      const activity = {
+        getPushToken: vi.fn(() => Promise.resolve("activity-token")),
+        addPushTokenListener: vi.fn(),
+      };
+
+      return Effect.gen(function* () {
+        yield* runBackgroundOperations();
+        fetchMock.mockClear();
+
+        expect(yield* registerLiveActivityPushToken({ activity: activity as never })).toBe(true);
+
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        const [request, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+        expect(request).toBe("https://desktop.example/api/personal-push/v1/live-activities");
+        expect(new Headers(init.headers).get("authorization")).toBe("Bearer bearer-token");
+        expect(JSON.parse(String(init.body))).toEqual({
+          deviceId: "device-1",
+          activityPushToken: "activity-token",
+        });
+      }).pipe(Effect.provide(relayTestLayer));
+    },
+  );
+
   it.effect("continues queued device registration after a failed auth lookup", () => {
     Constants.expoConfig!.extra = {
       relay: {
