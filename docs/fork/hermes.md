@@ -146,9 +146,10 @@ separate paths:
   probing `hermes cron list --all`. The projection is size-bounded and tolerant of unknown fields, and
   a malformed or unavailable profile is isolated to that host instead of failing the aggregate list.
 
-The web client refreshes the list periodically and serializes mutations per environment and provider
-instance. It never writes Hermes storage directly and never exposes raw command output or server-only
-environment values.
+The web and mobile clients share form validation, refresh the list through the same environment-scoped
+state, and serialize mutations per environment and provider instance. Neither client writes Hermes
+storage directly or exposes raw command output or server-only environment values. Desktop exposes the
+manager in its sidebar; mobile exposes a native list and editor under Settings → Automations.
 
 This management plane does not make scheduled runs into T3 conversations. ACP is request/response
 over stdio and cannot initiate a message after its host process has gone away. Unsolicited automation

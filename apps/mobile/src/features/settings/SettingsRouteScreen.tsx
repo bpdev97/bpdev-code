@@ -117,6 +117,11 @@ function LocalSettingsRouteScreen() {
             value={`${environmentCount}`}
             target="SettingsEnvironments"
           />
+          <SettingsRow
+            icon="bolt.horizontal.circle"
+            label="Automations"
+            target="SettingsAutomations"
+          />
         </SettingsSection>
 
         <SettingsSection title="Appearance">
@@ -465,6 +470,11 @@ function ConfiguredSettingsRouteScreen() {
             label="Environments"
             value={`${environmentCount}`}
             target="SettingsEnvironments"
+          />
+          <SettingsRow
+            icon="bolt.horizontal.circle"
+            label="Automations"
+            target="SettingsAutomations"
           />
           <SettingsSwitchRow
             icon="bell.badge"

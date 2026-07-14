@@ -56,7 +56,7 @@ feature.
 | ID                | Feature                                         | Status               | Maintenance record                                       | Tests                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | ----------------- | ----------------------------------------------- | -------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `FORK-CHAT-001`   | Directoryless generic chat                      | Active               | [`docs/fork/generic-chat.md`](docs/fork/generic-chat.md) | `vp test packages/shared/src/genericChat.test.ts packages/shared/src/threadResponseGrouping.test.ts packages/client-runtime/src/state/projectGrouping.genericChat.test.ts apps/server/src/genericChat.test.ts apps/server/src/orchestration/Layers/ProviderCommandReactor.genericChat.test.ts apps/web/src/components/chat/MessagesTimeline.logic.test.ts apps/mobile/src/lib/repositoryGroups.test.ts apps/mobile/src/lib/threadActivity.test.ts` |
-| `FORK-HERMES-001` | Hermes Agent provider and automation management | Active, early access | [`docs/fork/hermes.md`](docs/fork/hermes.md)             | `vp test apps/server/src/provider/hermes packages/contracts/src/settings.test.ts apps/web/src/components/settings/SettingsPanels.logic.test.ts`                                                                                                                                                                                                                                                                                                    |
+| `FORK-HERMES-001` | Hermes Agent provider and automation management | Active, early access | [`docs/fork/hermes.md`](docs/fork/hermes.md)             | `vp test apps/server/src/provider/hermes packages/contracts/src/settings.test.ts packages/client-runtime/src/operations/hermesAutomations.test.ts apps/web/src/components/settings/SettingsPanels.logic.test.ts`                                                                                                                                                                                                                                   |
 
 ### FORK-CHAT-001 ownership map
 
@@ -111,7 +111,10 @@ Fork-owned paths:
 - `apps/web/src/components/automations/`
 - `apps/web/src/routes/automations.tsx`
 - `apps/web/src/state/hermesAutomations.ts`
+- `apps/mobile/src/features/automations/`
+- `apps/mobile/src/state/hermesAutomations.ts`
 - `packages/contracts/src/hermesAutomation.ts`
+- `packages/client-runtime/src/operations/hermesAutomations.ts`
 - `packages/client-runtime/src/state/hermesAutomations.ts`
 - `docs/fork/hermes.md`
 - `docs/providers/hermes.md`
@@ -124,6 +127,7 @@ Shared upstream touchpoints containing small additive entries:
 - `packages/contracts/src/settings.ts`
 - `packages/contracts/src/model.ts`
 - `packages/client-runtime/package.json`
+- `packages/client-runtime/src/operations/index.ts`
 - `apps/server/src/provider/builtInDrivers.ts`
 - `apps/server/src/provider/acp/AcpRuntimeModel.ts`
 - `apps/server/src/provider/acp/AcpSessionRuntime.ts`
@@ -136,6 +140,9 @@ Shared upstream touchpoints containing small additive entries:
 - `apps/web/src/components/settings/SettingsPanels.tsx`
 - `apps/web/src/components/settings/SettingsPanels.logic.ts`
 - `apps/web/src/components/chat/providerIconUtils.ts`
+- `apps/mobile/src/Stack.tsx`
+- `apps/mobile/src/features/settings/SettingsRouteScreen.tsx`
+- `apps/mobile/src/features/settings/components/settings-sheet-targets.ts`
 - `apps/mobile/src/components/ProviderIcon.tsx`
 - `docs/README.md`
 

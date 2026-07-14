@@ -18,6 +18,12 @@ import type {
   HermesAutomationMutationInput,
 } from "@t3tools/contracts";
 import {
+  buildHermesAutomationUpsert,
+  draftForHermesAutomation,
+  type HermesAutomationDraft,
+  validateHermesAutomationDraft,
+} from "@t3tools/client-runtime/operations/hermes-automations";
+import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
@@ -51,43 +57,6 @@ interface AutomationEditorTarget {
   readonly automation: HermesAutomation | null;
 }
 
-interface AutomationDraft {
-  readonly name: string;
-  readonly schedule: string;
-  readonly prompt: string;
-  readonly delivery: string;
-  readonly repeat: string;
-  readonly skills: string;
-  readonly script: string;
-  readonly workdir: string;
-  readonly noAgent: boolean;
-}
-
-function draftForAutomation(automation: HermesAutomation | null): AutomationDraft {
-  return {
-    name: automation?.name ?? "",
-    schedule: automation?.schedule ?? "",
-    prompt: automation?.prompt ?? "",
-    delivery: automation?.delivery.join(",") ?? "local",
-    repeat: automation?.repeat.times == null ? "" : String(automation.repeat.times),
-    skills: automation?.skills.join(", ") ?? "",
-    script: automation?.script ?? "",
-    workdir: automation?.workdir ?? "",
-    noAgent: automation?.noAgent ?? false,
-  };
-}
-
-function commaSeparated(value: string): ReadonlyArray<string> {
-  return [
-    ...new Set(
-      value
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean),
-    ),
-  ];
-}
-
 function formatTimestamp(value: string | null): string {
   if (!value) return "Not scheduled";
   const date = new Date(value);
@@ -115,44 +84,24 @@ function AutomationEditorDialog({
   readonly onClose: () => void;
   readonly onSubmit: (input: HermesAutomationMutationInput) => void;
 }) {
-  const [draft, setDraft] = useState<AutomationDraft>(() =>
-    draftForAutomation(target?.automation ?? null),
+  const [draft, setDraft] = useState<HermesAutomationDraft>(() =>
+    draftForHermesAutomation(target?.automation ?? null),
   );
   const editing = target?.automation !== null && target?.automation !== undefined;
-  const repeat = draft.repeat.trim() ? Number(draft.repeat) : undefined;
-  const validRepeat =
-    repeat === undefined || (Number.isInteger(repeat) && Number.isFinite(repeat) && repeat > 0);
-  const valid =
-    Boolean(target && draft.schedule.trim()) &&
-    validRepeat &&
-    (!draft.noAgent || Boolean(draft.script.trim()));
+  const validation = validateHermesAutomationDraft(draft);
+  const valid = Boolean(target) && validation.ok;
 
-  const update = <K extends keyof AutomationDraft>(key: K, value: AutomationDraft[K]) =>
+  const update = <K extends keyof HermesAutomationDraft>(key: K, value: HermesAutomationDraft[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
 
   const submit = () => {
     if (!target || !valid) return;
-    const common = {
+    const result = buildHermesAutomationUpsert({
       instanceId: target.host.instanceId,
-      schedule: draft.schedule.trim(),
-      prompt: draft.prompt,
-      ...(draft.name.trim() ? { name: draft.name.trim() } : {}),
-      ...(draft.delivery.trim() ? { delivery: draft.delivery.trim() } : {}),
-      ...(repeat === undefined ? {} : { repeat }),
-      skills: commaSeparated(draft.skills),
-      script: draft.script,
-      noAgent: draft.noAgent,
-      workdir: draft.workdir,
-    } as const;
-    onSubmit(
-      target.automation
-        ? {
-            action: "update",
-            automationId: target.automation.id,
-            ...common,
-          }
-        : { action: "create", ...common },
-    );
+      ...(target.automation ? { automationId: target.automation.id } : {}),
+      draft,
+    });
+    if (result.ok) onSubmit(result.input);
   };
 
   return (
@@ -180,6 +129,7 @@ function AutomationEditorDialog({
               value={draft.schedule}
               onChange={(event) => update("schedule", event.target.value)}
               placeholder="0 9 * * * or every 2h"
+              aria-invalid={!validation.ok && validation.field === "schedule"}
             />
           </label>
           <label className="grid gap-1.5 text-xs font-medium sm:col-span-2">
@@ -205,7 +155,7 @@ function AutomationEditorDialog({
               value={draft.repeat}
               onChange={(event) => update("repeat", event.target.value)}
               placeholder="Blank for schedule default"
-              aria-invalid={!validRepeat}
+              aria-invalid={!validation.ok && validation.field === "repeat"}
             />
           </label>
           <label className="grid gap-1.5 text-xs font-medium sm:col-span-2">
@@ -222,6 +172,7 @@ function AutomationEditorDialog({
               value={draft.script}
               onChange={(event) => update("script", event.target.value)}
               placeholder="Script under ~/.hermes/scripts"
+              aria-invalid={!validation.ok && validation.field === "script"}
             />
           </label>
           <label className="grid gap-1.5 text-xs font-medium">

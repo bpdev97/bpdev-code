@@ -16,6 +16,8 @@ import { useResolveClassNames } from "uniwind";
 import { AppText as Text } from "./components/AppText";
 import { ArchivedThreadsRouteScreen } from "./features/archive/ArchivedThreadsRouteScreen";
 import { useAgentNotificationNavigation } from "./features/agent-awareness/notificationNavigation";
+import { AutomationEditorRouteScreen } from "./features/automations/AutomationEditorRouteScreen";
+import { AutomationsRouteScreen } from "./features/automations/AutomationsRouteScreen";
 import { ClerkSettingsSheetDetentProvider } from "./features/cloud/ClerkSettingsSheetDetent";
 import { ConnectOnboardingRouteScreen } from "./features/cloud/ConnectOnboardingRouteScreen";
 import { useConnectOnboardingNavigation } from "./features/cloud/connectOnboardingNavigation";
@@ -143,6 +145,20 @@ const SettingsSheetStack = createNativeStackNavigator({
       linking: "environments",
       options: {
         title: "Environments",
+      },
+    }),
+    SettingsAutomations: createNativeStackScreen({
+      screen: AutomationsRouteScreen,
+      linking: "automations",
+      options: {
+        title: "Automations",
+      },
+    }),
+    SettingsAutomationEditor: createNativeStackScreen({
+      screen: AutomationEditorRouteScreen,
+      linking: "automations/editor/:environmentId/:instanceId",
+      options: {
+        title: "Automation",
       },
     }),
     SettingsEnvironmentNew: createNativeStackScreen({
