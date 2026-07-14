@@ -38,10 +38,10 @@ them.
 
 ## Manage automations
 
-Open Automations in the sidebar to manage scheduled jobs for enabled Hermes profiles across all
-connected environments. You can create and edit jobs, pause or resume them, trigger an immediate
-run, and delete them. T3 uses the binary, profile, and server-side environment from each Hermes
-provider instance, so jobs remain isolated to that profile.
+Open Automations in the desktop sidebar, or Settings → Automations on mobile, to manage scheduled
+jobs for enabled Hermes profiles across all connected environments. You can create and edit jobs,
+pause or resume them, trigger an immediate run, and delete them. T3 uses the binary, profile, and
+server-side environment from each Hermes provider instance, so jobs remain isolated to that profile.
 
 Hermes's gateway must be running for scheduled jobs to fire automatically:
 
