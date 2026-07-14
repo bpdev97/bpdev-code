@@ -24,6 +24,7 @@ import { hermesAutomationEnvironment } from "../../state/hermesAutomations";
 import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { sortEnvironmentsByLabel } from "./automationsPresentation";
 
 type LifecycleAction = "pause" | "resume" | "run" | "remove";
 
@@ -400,10 +401,7 @@ function EnvironmentSection(props: {
 export function AutomationsRouteScreen() {
   const { environments, isReady } = useEnvironments();
   const insets = useSafeAreaInsets();
-  const sortedEnvironments = useMemo(
-    () => environments.toSorted((left, right) => left.label.localeCompare(right.label)),
-    [environments],
-  );
+  const sortedEnvironments = useMemo(() => sortEnvironmentsByLabel(environments), [environments]);
 
   return (
     <View collapsable={false} className="flex-1 bg-sheet">
