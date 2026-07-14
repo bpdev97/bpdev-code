@@ -53,10 +53,38 @@ files.
 Agents must read the referenced maintenance record before rebasing upstream or modifying a listed
 feature.
 
-| ID                | Feature                                         | Status               | Maintenance record                                       | Tests                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ----------------- | ----------------------------------------------- | -------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FORK-CHAT-001`   | Directoryless generic chat                      | Active               | [`docs/fork/generic-chat.md`](docs/fork/generic-chat.md) | `vp test packages/shared/src/genericChat.test.ts packages/shared/src/threadResponseGrouping.test.ts packages/client-runtime/src/state/projectGrouping.genericChat.test.ts apps/server/src/genericChat.test.ts apps/server/src/orchestration/Layers/ProviderCommandReactor.genericChat.test.ts apps/web/src/components/chat/MessagesTimeline.logic.test.ts apps/mobile/src/lib/repositoryGroups.test.ts apps/mobile/src/lib/threadActivity.test.ts` |
-| `FORK-HERMES-001` | Hermes Agent provider and automation management | Active, early access | [`docs/fork/hermes.md`](docs/fork/hermes.md)             | `vp test apps/server/src/provider/hermes packages/contracts/src/settings.test.ts packages/client-runtime/src/operations/hermesAutomations.test.ts apps/web/src/components/settings/SettingsPanels.logic.test.ts`                                                                                                                                                                                                                                   |
+| ID                | Feature                                           | Status               | Maintenance record                                                     | Tests                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ----------------- | ------------------------------------------------- | -------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FORK-CHAT-001`   | Directoryless generic chat                        | Active               | [`docs/fork/generic-chat.md`](docs/fork/generic-chat.md)               | `vp test packages/shared/src/genericChat.test.ts packages/shared/src/threadResponseGrouping.test.ts packages/client-runtime/src/state/projectGrouping.genericChat.test.ts apps/server/src/genericChat.test.ts apps/server/src/orchestration/Layers/ProviderCommandReactor.genericChat.test.ts apps/web/src/components/chat/MessagesTimeline.logic.test.ts apps/mobile/src/lib/repositoryGroups.test.ts apps/mobile/src/lib/threadActivity.test.ts` |
+| `FORK-HERMES-001` | Hermes Agent provider and automation management   | Active, early access | [`docs/fork/hermes.md`](docs/fork/hermes.md)                           | `vp test apps/server/src/provider/hermes packages/contracts/src/settings.test.ts packages/client-runtime/src/operations/hermesAutomations.test.ts apps/web/src/components/settings/SettingsPanels.logic.test.ts`                                                                                                                                                                                                                                   |
+| `FORK-PUSH-001`   | Tailnet APNs notification and Live Activity relay | Active               | [`docs/fork/personal-push-relay.md`](docs/fork/personal-push-relay.md) | `vp test apps/push-relay/src apps/server/src/relay/AgentAwarenessRelay.test.ts apps/mobile/src/features/agent-awareness/remoteRegistration.test.ts`                                                                                                                                                                                                                                                                                                |
+
+### FORK-PUSH-001 ownership map
+
+Fork-owned paths:
+
+- `.dockerignore`
+- `apps/push-relay/`
+- `apps/server/src/personalPush/`
+- `docs/fork/personal-push-relay.md`
+
+Shared upstream touchpoints containing additive personal-relay behavior:
+
+- `.gitignore`
+- `packages/contracts/src/relay.ts`
+- `apps/server/src/config.ts`
+- `apps/server/src/cli/config.ts`
+- `apps/server/src/http.ts`
+- `apps/server/src/server.ts`
+- `apps/server/src/relay/AgentAwarenessRelay.ts`
+- `apps/mobile/src/App.tsx`
+- `apps/mobile/src/features/agent-awareness/remoteRegistration.ts`
+
+The personal relay runs alongside the hosted relay path. During upstream syncs, preserve the
+canonical awareness projection and its confirmation/deduplication worker, then reapply personal
+publishing as a second sink. Review mobile registration changes for new token APIs or authentication
+methods before adapting the connection bridge. The APNs key and relay bearer token must never enter
+git, logs, issues, or PR text.
 
 ### FORK-CHAT-001 ownership map
 
