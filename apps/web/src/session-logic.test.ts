@@ -756,6 +756,29 @@ describe("deriveWorkLogEntries", () => {
     expect(entries[0]?.label).toBe("Searching for API endpoints");
   });
 
+  it("renders projected reasoning as a thinking entry with live detail", () => {
+    const entries = deriveWorkLogEntries([
+      makeActivity({
+        id: "reasoning:thread-1:turn-1:reasoning_text",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "task.progress",
+        summary: "Thinking",
+        tone: "info",
+        payload: {
+          summary: "Thinking",
+          detail: "Inspecting the provider event stream.",
+          streamKind: "reasoning_text",
+        },
+      }),
+    ]);
+
+    expect(entries[0]).toMatchObject({
+      label: "Thinking",
+      detail: "Inspecting the provider event stream.",
+      tone: "thinking",
+    });
+  });
+
   it("uses payload detail as label for task.completed and preserves error tone", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({

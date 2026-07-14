@@ -68,8 +68,10 @@ persist approval accidentally.
 
 Hermes `agent_message_chunk` and `agent_thought_chunk` notifications map to T3 assistant and
 reasoning streams. Tool calls, plans, permissions, and terminal turn states use the shared canonical
-ACP event constructors. ACP message chunks do not carry item IDs, so T3 synthesizes them. Hermes
-namespaces those IDs by the local runtime incarnation as well as the ACP session and segment; a
+ACP event constructors. Canonical reasoning deltas are coalesced into a live thinking activity so
+they survive persistence and reconnects without creating one work-log row per token. ACP message
+chunks do not carry item IDs, so T3 synthesizes them. Hermes namespaces those IDs by the local runtime
+incarnation as well as the ACP session and segment; a
 resumed Hermes session must never reuse a persisted T3 message ID from an earlier process.
 
 When a user follows up while a Hermes prompt is still running, T3 sends Hermes's `/steer` command
@@ -120,6 +122,13 @@ The source review completed on 2026-07-12 against Hermes Agent 0.18.2 at commit
 The 2026-07-12 Mac mini smoke reached `session/set_model` with a real Hermes binary. Hermes then
 returned the provider-routing error described below, and T3 surfaced its `data.details` diagnostic.
 This was a partial transport and error-reporting smoke, not a successful end-to-end chat.
+
+On 2026-07-14, the opt-in `HermesAcpCliProbe.test.ts` passed against the locally installed Hermes
+Agent 0.18.2 using the configured OpenAI Codex provider and `gpt-5.6-sol`. A realistic read-only
+repository inspection produced genuine `agent_thought_chunk` notifications, assistant output, tool
+activity, and a completed turn. A trivial arithmetic prompt produced no thought notification because
+Hermes requests Codex reasoning summaries with `summary: auto`; clients must not manufacture a
+reasoning entry when the provider chooses not to return one.
 
 ## Known upstream compatibility
 

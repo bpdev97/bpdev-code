@@ -132,6 +132,7 @@ Shared upstream touchpoints containing small additive entries:
 - `apps/server/src/provider/acp/AcpRuntimeModel.ts`
 - `apps/server/src/provider/acp/AcpSessionRuntime.ts`
 - `apps/server/src/provider/acp/AcpCoreRuntimeEvents.ts`
+- `apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts`
 - `apps/server/src/ws.ts`
 - `apps/web/src/routeTree.gen.ts`
 - `apps/web/src/components/Sidebar.tsx`
