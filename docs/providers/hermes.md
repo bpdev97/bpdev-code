@@ -36,6 +36,23 @@ You can choose a Hermes instance and model for an individual chat or set it as a
 model selection. Existing threads remain bound to the instance and Hermes session that created
 them.
 
+## Manage automations
+
+Open Automations in the sidebar to manage scheduled jobs for enabled Hermes profiles across all
+connected environments. You can create and edit jobs, pause or resume them, trigger an immediate
+run, and delete them. T3 uses the binary, profile, and server-side environment from each Hermes
+provider instance, so jobs remain isolated to that profile.
+
+Hermes's gateway must be running for scheduled jobs to fire automatically:
+
+```bash
+hermes --profile <profile> cron status
+hermes --profile <profile> gateway install
+```
+
+The Automations page manages Hermes jobs; scheduled output is still delivered through the target
+configured on each job. It does not currently create or continue T3 chat threads.
+
 ## Runtime modes
 
 - Approval required asks before protected operations.
@@ -63,5 +80,6 @@ hermes --profile <profile> model
 If a restored thread fails, verify the same profile still owns the session. Changing a provider
 instance's profile intentionally points it at a different Hermes state database.
 
-Automation callbacks are not part of the first ACP release. They will use a Hermes platform plugin
-so a scheduled agent can create or continue a T3 thread and trigger the existing mobile push path.
+Automation callbacks into T3 chats are not part of the ACP integration. They will use a Hermes
+platform plugin so a scheduled agent can create or continue a T3 thread and trigger the existing
+mobile push path.

@@ -131,11 +131,31 @@ workaround; the ACP error normalization above exists to surface the upstream dia
 
 ## Automation follow-up
 
-ACP is request/response over stdio and cannot initiate a message after its host process has gone
-away. Automation delivery will therefore use an out-of-tree Hermes platform plugin and a
-transport-discriminated gateway cursor. The plugin will translate durable deliveries into the same
-canonical turn lifecycle used here, allowing T3's existing agent-awareness relay to send mobile push
-notifications and deep-link into the exact automation-backed thread.
+The Automations route is a management plane for every enabled Hermes provider instance on every
+connected T3 environment. The provider instance remains the ownership boundary: its configured
+profile selects one profile-scoped Hermes cron store, and its binary path and server-only environment
+are reused for all commands.
+
+Hermes does not currently provide structured cron output. The server therefore uses two deliberately
+separate paths:
+
+- Availability and every mutation go through the official `hermes --profile <profile> cron ...` CLI.
+  Create, edit, pause, resume, run, and remove retain Hermes's own validation, locking, and next-run
+  computation.
+- Listing projects the profile's atomically-written `cron/jobs.json` into a small T3 contract after
+  probing `hermes cron list --all`. The projection is size-bounded and tolerant of unknown fields, and
+  a malformed or unavailable profile is isolated to that host instead of failing the aggregate list.
+
+The web client refreshes the list periodically and serializes mutations per environment and provider
+instance. It never writes Hermes storage directly and never exposes raw command output or server-only
+environment values.
+
+This management plane does not make scheduled runs into T3 conversations. ACP is request/response
+over stdio and cannot initiate a message after its host process has gone away. Unsolicited automation
+delivery still requires an out-of-tree Hermes platform plugin and a transport-discriminated gateway
+cursor. That plugin should translate durable deliveries into the same canonical turn lifecycle used
+here, allowing T3's existing agent-awareness relay to send mobile push notifications and deep-link
+into the exact automation-backed thread.
 
 Do not add polling against `hermes-webui` as a shortcut.
 
@@ -148,6 +168,8 @@ When updating the Hermes baseline:
 2. Run the adapter and text-generation tests against the deterministic ACP mock.
 3. With a configured real profile, verify version output, model discovery, a tool approval in each
    runtime mode, process restart, and `session/load`.
-4. Update the compatibility baseline above only for checks that actually ran; distinguish source
+4. Verify `cron list --all`, create, edit, pause, resume, run, and remove against the same default and
+   named profiles, and compare the projected fields with the current `cron/jobs.json` schema.
+5. Update the compatibility baseline above only for checks that actually ran; distinguish source
    review, partial smoke coverage, and a successful end-to-end chat.
-5. Record any T3 upstream sync separately in `/FORK.md`.
+6. Record any T3 upstream sync separately in `/FORK.md`.
