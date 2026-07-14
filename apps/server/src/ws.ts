@@ -77,6 +77,7 @@ import {
 } from "./observability/RpcInstrumentation.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
+import * as HermesAutomationManager from "./provider/hermes/HermesAutomationManager.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
@@ -301,6 +302,8 @@ const RPC_REQUIRED_SCOPE = new Map<string, AuthEnvironmentScope>([
   [WS_METHODS.sourceControlLookupRepository, AuthOrchestrationReadScope],
   [WS_METHODS.sourceControlCloneRepository, AuthOrchestrationOperateScope],
   [WS_METHODS.sourceControlPublishRepository, AuthOrchestrationOperateScope],
+  [WS_METHODS.hermesAutomationsList, AuthOrchestrationReadScope],
+  [WS_METHODS.hermesAutomationsMutate, AuthOrchestrationOperateScope],
   [WS_METHODS.projectsListEntries, AuthOrchestrationReadScope],
   [WS_METHODS.projectsReadFile, AuthOrchestrationReadScope],
   [WS_METHODS.projectsSearchEntries, AuthOrchestrationReadScope],
@@ -409,6 +412,7 @@ const makeWsRpcLayer = (
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
       const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
+      const hermesAutomationManager = yield* HermesAutomationManager.HermesAutomationManager;
       const config = yield* ServerConfig.ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
       const serverSettings = yield* ServerSettings.ServerSettingsService;
@@ -1009,6 +1013,20 @@ const makeWsRpcLayer = (
               ),
             ),
             { "rpc.aggregate": "orchestration" },
+          ),
+        [WS_METHODS.hermesAutomationsList]: () =>
+          observeRpcEffect(WS_METHODS.hermesAutomationsList, hermesAutomationManager.list, {
+            "rpc.aggregate": "hermesAutomations",
+          }),
+        [WS_METHODS.hermesAutomationsMutate]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.hermesAutomationsMutate,
+            hermesAutomationManager.mutate(input),
+            {
+              "rpc.aggregate": "hermesAutomations",
+              "rpc.operation": input.action,
+              "provider.instance_id": input.instanceId,
+            },
           ),
         [ORCHESTRATION_WS_METHODS.getTurnDiff]: (input) =>
           observeRpcEffect(
@@ -1883,6 +1901,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
           Effect.provide(
             makeWsRpcLayer(session, previewAutomationBroker).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
+              Layer.provide(HermesAutomationManager.layer),
               Layer.provide(ProviderMaintenanceRunner.layer),
               Layer.provide(
                 SourceControlDiscovery.layer.pipe(

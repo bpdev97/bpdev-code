@@ -143,6 +143,11 @@ import {
   SourceControlRepositoryLookupInput,
 } from "./sourceControl.ts";
 import { VcsError } from "./vcs.ts";
+import {
+  HermesAutomationError,
+  HermesAutomationListResult,
+  HermesAutomationMutationInput,
+} from "./hermesAutomation.ts";
 
 export const WS_METHODS = {
   // Project registry methods
@@ -222,6 +227,10 @@ export const WS_METHODS = {
   sourceControlLookupRepository: "sourceControl.lookupRepository",
   sourceControlCloneRepository: "sourceControl.cloneRepository",
   sourceControlPublishRepository: "sourceControl.publishRepository",
+
+  // Hermes automation methods
+  hermesAutomationsList: "hermesAutomations.list",
+  hermesAutomationsMutate: "hermesAutomations.mutate",
 
   // Streaming subscriptions
   subscribeVcsStatus: "subscribeVcsStatus",
@@ -353,6 +362,18 @@ export const WsSourceControlPublishRepositoryRpc = Rpc.make(
     error: Schema.Union([SourceControlRepositoryError, EnvironmentAuthorizationError]),
   },
 );
+
+export const WsHermesAutomationsListRpc = Rpc.make(WS_METHODS.hermesAutomationsList, {
+  payload: Schema.Struct({}),
+  success: HermesAutomationListResult,
+  error: Schema.Union([HermesAutomationError, EnvironmentAuthorizationError]),
+});
+
+export const WsHermesAutomationsMutateRpc = Rpc.make(WS_METHODS.hermesAutomationsMutate, {
+  payload: HermesAutomationMutationInput,
+  success: HermesAutomationListResult,
+  error: Schema.Union([HermesAutomationError, EnvironmentAuthorizationError]),
+});
 
 export const WsProjectsSearchEntriesRpc = Rpc.make(WS_METHODS.projectsSearchEntries, {
   payload: ProjectSearchEntriesInput,
@@ -699,6 +720,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsSourceControlLookupRepositoryRpc,
   WsSourceControlCloneRepositoryRpc,
   WsSourceControlPublishRepositoryRpc,
+  WsHermesAutomationsListRpc,
+  WsHermesAutomationsMutateRpc,
   WsProjectsListEntriesRpc,
   WsProjectsReadFileRpc,
   WsProjectsSearchEntriesRpc,

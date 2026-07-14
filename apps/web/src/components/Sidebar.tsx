@@ -1,6 +1,7 @@
 import {
   ArchiveIcon,
   ArrowUpDownIcon,
+  CalendarClockIcon,
   ChevronRightIcon,
   CloudIcon,
   ContainerIcon,
@@ -2830,7 +2831,14 @@ function T3Wordmark() {
 
 const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   const navigate = useNavigate();
+  const pathname = useLocation({ select: (location) => location.pathname });
   const { isMobile, setOpenMobile } = useSidebar();
+  const handleAutomationsClick = useCallback(() => {
+    if (isMobile) {
+      setOpenMobile(false);
+    }
+    void navigate({ to: "/automations" });
+  }, [isMobile, navigate, setOpenMobile]);
   const handleSettingsClick = useCallback(() => {
     if (isMobile) {
       setOpenMobile(false);
@@ -2843,6 +2851,17 @@ const SidebarChromeFooter = memo(function SidebarChromeFooter() {
       <SidebarProviderUpdatePill />
       <SidebarUpdatePill />
       <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuButton
+            size="sm"
+            isActive={pathname.startsWith("/automations")}
+            className="gap-2 px-2 py-1.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground"
+            onClick={handleAutomationsClick}
+          >
+            <CalendarClockIcon className="size-3.5" />
+            <span className="text-xs">Automations</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
         <SidebarMenuItem>
           <SidebarMenuButton
             size="sm"
