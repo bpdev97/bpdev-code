@@ -2471,6 +2471,48 @@ describe("ProviderRuntimeIngestion", () => {
     expect(resolvedPayload?.requestType).toBe("command_execution_approval");
   });
 
+  it("maps MCP tool approval requests into computer-use approval activities", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    harness.emit({
+      type: "request.opened",
+      eventId: asEventId("evt-mcp-tool-approval-opened"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      requestId: ApprovalRequestId.make("req-mcp-tool"),
+      payload: {
+        requestType: "mcp_tool_call_approval",
+        detail: "Use computer tool preview_open?",
+        supportsSessionPersistence: true,
+      },
+    });
+
+    await waitForThread(harness.readModel, (entry) =>
+      entry.activities.some(
+        (activity: ProviderRuntimeTestActivity) => activity.id === "evt-mcp-tool-approval-opened",
+      ),
+    );
+
+    const readModel = await harness.readModel();
+    const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    const activity = thread?.activities.find(
+      (entry: ProviderRuntimeTestActivity) => entry.id === "evt-mcp-tool-approval-opened",
+    );
+    const payload =
+      activity?.payload && typeof activity.payload === "object"
+        ? (activity.payload as Record<string, unknown>)
+        : undefined;
+
+    expect(activity?.summary).toBe("Computer-use approval requested");
+    expect(payload).toMatchObject({
+      requestKind: "mcp-tool-call",
+      requestType: "mcp_tool_call_approval",
+      supportsSessionPersistence: true,
+    });
+  });
+
   it("maps runtime.error into errored session state", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";

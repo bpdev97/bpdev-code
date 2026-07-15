@@ -1,9 +1,12 @@
 import { type ApprovalRequestId, type ProviderApprovalDecision } from "@t3tools/contracts";
 import { memo } from "react";
 import { Button } from "../ui/button";
+import type { PendingApproval } from "../../session-logic";
 
 interface ComposerPendingApprovalActionsProps {
   requestId: ApprovalRequestId;
+  requestKind: PendingApproval["requestKind"];
+  supportsSessionPersistence: boolean;
   isResponding: boolean;
   onRespondToApproval: (
     requestId: ApprovalRequestId,
@@ -13,6 +16,8 @@ interface ComposerPendingApprovalActionsProps {
 
 export const ComposerPendingApprovalActions = memo(function ComposerPendingApprovalActions({
   requestId,
+  requestKind,
+  supportsSessionPersistence,
   isResponding,
   onRespondToApproval,
 }: ComposerPendingApprovalActionsProps) {
@@ -24,24 +29,28 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
         disabled={isResponding}
         onClick={() => void onRespondToApproval(requestId, "cancel")}
       >
-        Cancel turn
+        {requestKind === "mcp-tool-call" ? "Cancel tool call" : "Cancel turn"}
       </Button>
-      <Button
-        size="sm"
-        variant="destructive-outline"
-        disabled={isResponding}
-        onClick={() => void onRespondToApproval(requestId, "decline")}
-      >
-        Decline
-      </Button>
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={isResponding}
-        onClick={() => void onRespondToApproval(requestId, "acceptForSession")}
-      >
-        Always allow this session
-      </Button>
+      {requestKind === "mcp-tool-call" ? null : (
+        <Button
+          size="sm"
+          variant="destructive-outline"
+          disabled={isResponding}
+          onClick={() => void onRespondToApproval(requestId, "decline")}
+        >
+          Decline
+        </Button>
+      )}
+      {requestKind !== "mcp-tool-call" || supportsSessionPersistence ? (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={isResponding}
+          onClick={() => void onRespondToApproval(requestId, "acceptForSession")}
+        >
+          Always allow this session
+        </Button>
+      ) : null}
       <Button
         size="sm"
         variant="default"

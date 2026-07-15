@@ -35,6 +35,7 @@ import * as CodexErrors from "effect-codex-app-server/errors";
 import * as CodexRpc from "effect-codex-app-server/rpc";
 import * as EffectCodexSchema from "effect-codex-app-server/schema";
 
+import { parseCodexMcpToolApproval, toCodexMcpToolApprovalResponse } from "../CodexMcpApproval.ts";
 import { buildCodexInitializeParams } from "./CodexProvider.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
 import {
@@ -207,7 +208,6 @@ export class CodexSessionRuntimeThreadIdMissingError extends Schema.TaggedErrorC
 
 interface PendingApproval {
   readonly requestId: ApprovalRequestId;
-  readonly jsonRpcId: string;
   readonly requestKind: ProviderRequestKind;
   readonly turnId: TurnId | undefined;
   readonly itemId: ProviderItemId | undefined;
@@ -960,7 +960,6 @@ export const makeCodexSessionRuntime = (
           const next = new Map(current);
           next.set(requestId, {
             requestId,
-            jsonRpcId: payload.approvalId ?? payload.itemId,
             requestKind: "command",
             turnId,
             itemId,
@@ -1018,7 +1017,6 @@ export const makeCodexSessionRuntime = (
           const next = new Map(current);
           next.set(requestId, {
             requestId,
-            jsonRpcId: payload.itemId,
             requestKind: "file-change",
             turnId,
             itemId,
@@ -1060,6 +1058,54 @@ export const makeCodexSessionRuntime = (
         return {
           decision: resolved,
         } satisfies EffectCodexSchema.FileChangeRequestApprovalResponse;
+      }),
+    );
+
+    yield* client.handleServerRequest("mcpServer/elicitation/request", (payload) =>
+      Effect.gen(function* () {
+        const approval = parseCodexMcpToolApproval(payload);
+        if (!approval) {
+          return {
+            action: "cancel",
+          } satisfies EffectCodexSchema.McpServerElicitationRequestResponse;
+        }
+
+        const requestId = ApprovalRequestId.make(yield* randomUUIDv4("mcp-tool-approval-request"));
+        const turnId = payload.turnId ? TurnId.make(payload.turnId) : undefined;
+        const decision = yield* Deferred.make<ProviderApprovalDecision>();
+
+        yield* Ref.update(pendingApprovalsRef, (current) => {
+          const next = new Map(current);
+          next.set(requestId, {
+            requestId,
+            requestKind: "mcp-tool-call",
+            turnId,
+            itemId: undefined,
+            decision,
+          });
+          return next;
+        });
+
+        yield* emitEvent({
+          kind: "request",
+          threadId: options.threadId,
+          method: "mcpServer/elicitation/request",
+          requestId,
+          requestKind: "mcp-tool-call",
+          ...(turnId ? { turnId } : {}),
+          payload,
+        });
+
+        const resolved = yield* Deferred.await(decision).pipe(
+          Effect.ensuring(
+            Ref.update(pendingApprovalsRef, (current) => {
+              const next = new Map(current);
+              next.delete(requestId);
+              return next;
+            }),
+          ),
+        );
+        return toCodexMcpToolApprovalResponse(resolved, approval);
       }),
     );
 

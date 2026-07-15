@@ -53,11 +53,39 @@ files.
 Agents must read the referenced maintenance record before rebasing upstream or modifying a listed
 feature.
 
-| ID                | Feature                                           | Status               | Maintenance record                                                     | Tests                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ----------------- | ------------------------------------------------- | -------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FORK-CHAT-001`   | Directoryless generic chat                        | Active               | [`docs/fork/generic-chat.md`](docs/fork/generic-chat.md)               | `vp test packages/shared/src/genericChat.test.ts packages/shared/src/threadResponseGrouping.test.ts packages/client-runtime/src/state/projectGrouping.genericChat.test.ts apps/server/src/genericChat.test.ts apps/server/src/orchestration/Layers/ProviderCommandReactor.genericChat.test.ts apps/web/src/components/chat/MessagesTimeline.logic.test.ts apps/mobile/src/lib/repositoryGroups.test.ts apps/mobile/src/lib/threadActivity.test.ts` |
-| `FORK-HERMES-001` | Hermes Agent provider and automation management   | Active, early access | [`docs/fork/hermes.md`](docs/fork/hermes.md)                           | `vp test apps/server/src/provider/hermes packages/contracts/src/settings.test.ts packages/client-runtime/src/operations/hermesAutomations.test.ts apps/web/src/components/settings/SettingsPanels.logic.test.ts`                                                                                                                                                                                                                                   |
-| `FORK-PUSH-001`   | Tailnet APNs notification and Live Activity relay | Active               | [`docs/fork/personal-push-relay.md`](docs/fork/personal-push-relay.md) | `vp test apps/push-relay/src apps/server/src/personalPush apps/server/src/serverSettings.test.ts apps/server/src/relay/AgentAwarenessRelay.test.ts apps/mobile/src/features/agent-awareness/remoteRegistration.test.ts packages/contracts/src/settings.test.ts`                                                                                                                                                                                    |
+| ID                | Feature                                           | Status               | Maintenance record                                                               | Tests                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ----------------- | ------------------------------------------------- | -------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FORK-CHAT-001`   | Directoryless generic chat                        | Active               | [`docs/fork/generic-chat.md`](docs/fork/generic-chat.md)                         | `vp test packages/shared/src/genericChat.test.ts packages/shared/src/threadResponseGrouping.test.ts packages/client-runtime/src/state/projectGrouping.genericChat.test.ts apps/server/src/genericChat.test.ts apps/server/src/orchestration/Layers/ProviderCommandReactor.genericChat.test.ts apps/web/src/components/chat/MessagesTimeline.logic.test.ts apps/mobile/src/lib/repositoryGroups.test.ts apps/mobile/src/lib/threadActivity.test.ts` |
+| `FORK-HERMES-001` | Hermes Agent provider and automation management   | Active, early access | [`docs/fork/hermes.md`](docs/fork/hermes.md)                                     | `vp test apps/server/src/provider/hermes packages/contracts/src/settings.test.ts packages/client-runtime/src/operations/hermesAutomations.test.ts apps/web/src/components/settings/SettingsPanels.logic.test.ts`                                                                                                                                                                                                                                   |
+| `FORK-PUSH-001`   | Tailnet APNs notification and Live Activity relay | Active               | [`docs/fork/personal-push-relay.md`](docs/fork/personal-push-relay.md)           | `vp test apps/push-relay/src apps/server/src/personalPush apps/server/src/serverSettings.test.ts apps/server/src/relay/AgentAwarenessRelay.test.ts apps/mobile/src/features/agent-awareness/remoteRegistration.test.ts packages/contracts/src/settings.test.ts`                                                                                                                                                                                    |
+| `FORK-CODEX-001`  | Codex MCP tool approval prompts                   | Active, temporary    | [`docs/fork/codex-mcp-tool-approvals.md`](docs/fork/codex-mcp-tool-approvals.md) | `vp test apps/server/src/provider/CodexMcpApproval.test.ts apps/server/src/provider/Layers/CodexAdapter.test.ts apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.test.ts apps/web/src/session-logic.test.ts apps/mobile/src/lib/threadActivity.test.ts`                                                                                                                                                                               |
+
+### FORK-CODEX-001 ownership map
+
+Fork-owned paths:
+
+- `apps/server/src/provider/CodexMcpApproval.ts`
+- `docs/fork/codex-mcp-tool-approvals.md`
+
+Shared upstream touchpoints containing the MCP approval path:
+
+- `packages/contracts/src/orchestration.ts`
+- `packages/contracts/src/providerRuntime.ts`
+- `packages/effect-codex-app-server/src/errors.ts`
+- `apps/server/src/provider/Layers/CodexSessionRuntime.ts`
+- `apps/server/src/provider/Layers/CodexAdapter.ts`
+- `apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts`
+- `apps/web/src/session-logic.ts`
+- `apps/web/src/components/chat/ComposerPendingApprovalPanel.tsx`
+- `apps/web/src/components/chat/ComposerPendingApprovalActions.tsx`
+- `apps/web/src/components/chat/ChatComposer.tsx`
+- `apps/mobile/src/lib/threadActivity.ts`
+- `apps/mobile/src/features/threads/PendingApprovalCard.tsx`
+
+Remove this feature when upstream T3 handles Codex `mcpServer/elicitation/request` messages tagged
+with `codex_approval_kind: "mcp_tool_call"`, including session-persistence metadata and web/mobile
+approval rendering. Preserve the immediate cancel response for unsupported structured or URL
+elicitations unless upstream adds a complete input flow for them.
 
 ### FORK-PUSH-001 ownership map
 

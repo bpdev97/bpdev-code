@@ -136,6 +136,7 @@ export const CanonicalRequestType = Schema.Literals([
   "command_execution_approval",
   "file_read_approval",
   "file_change_approval",
+  "mcp_tool_call_approval",
   "apply_patch_approval",
   "exec_command_approval",
   "tool_user_input",
@@ -422,6 +423,7 @@ const RequestOpenedPayload = Schema.Struct({
   requestType: CanonicalRequestType,
   detail: Schema.optional(TrimmedNonEmptyStringSchema),
   args: Schema.optional(Schema.Unknown),
+  supportsSessionPersistence: Schema.optional(Schema.Boolean),
 });
 export type RequestOpenedPayload = typeof RequestOpenedPayload.Type;
 

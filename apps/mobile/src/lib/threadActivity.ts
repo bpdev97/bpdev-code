@@ -3,6 +3,7 @@ import type {
   OrchestrationLatestTurn,
   OrchestrationThread,
   OrchestrationThreadActivity,
+  ProviderRequestKind,
   ToolLifecycleItemType,
   UserInputQuestion,
 } from "@t3tools/contracts";
@@ -17,9 +18,10 @@ import * as Order from "effect/Order";
 
 export interface PendingApproval {
   readonly requestId: ApprovalRequestId;
-  readonly requestKind: "command" | "file-read" | "file-change";
+  readonly requestKind: ProviderRequestKind;
   readonly createdAt: string;
   readonly detail?: string;
+  readonly supportsSessionPersistence?: boolean;
 }
 
 export interface PendingUserInput {
@@ -143,6 +145,8 @@ function requestKindFromRequestType(requestType: unknown): PendingApproval["requ
     case "file_change_approval":
     case "apply_patch_approval":
       return "file-change";
+    case "mcp_tool_call_approval":
+      return "mcp-tool-call";
     default:
       return null;
   }
@@ -1101,10 +1105,15 @@ export function derivePendingApprovals(
     const requestKind =
       payload?.requestKind === "command" ||
       payload?.requestKind === "file-read" ||
-      payload?.requestKind === "file-change"
+      payload?.requestKind === "file-change" ||
+      payload?.requestKind === "mcp-tool-call"
         ? payload.requestKind
         : requestKindFromRequestType(payload?.requestType);
     const detail = typeof payload?.detail === "string" ? payload.detail : undefined;
+    const supportsSessionPersistence =
+      typeof payload?.supportsSessionPersistence === "boolean"
+        ? payload.supportsSessionPersistence
+        : undefined;
 
     if (activity.kind === "approval.requested" && requestId && requestKind) {
       openByRequestId.set(requestId, {
@@ -1112,6 +1121,7 @@ export function derivePendingApprovals(
         requestKind,
         createdAt: activity.createdAt,
         ...(detail ? { detail } : {}),
+        ...(supportsSessionPersistence !== undefined ? { supportsSessionPersistence } : {}),
       });
       continue;
     }

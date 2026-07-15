@@ -40,6 +40,7 @@ import * as EffectCodexSchema from "effect-codex-app-server/schema";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { getCodexServiceTierOptionValue } from "../../codexModelOptions.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import { parseCodexMcpToolApproval } from "../CodexMcpApproval.ts";
 
 import {
   ProviderAdapterRequestError,
@@ -292,6 +293,8 @@ function toRequestTypeFromMethod(method: string): CanonicalRequestType {
       return "file_read_approval";
     case "item/fileChange/requestApproval":
       return "file_change_approval";
+    case "mcpServer/elicitation/request":
+      return "mcp_tool_call_approval";
     case "applyPatchApproval":
       return "apply_patch_approval";
     case "execCommandApproval":
@@ -315,6 +318,8 @@ function toRequestTypeFromKind(kind: ProviderRequestKind | undefined): Canonical
       return "file_read_approval";
     case "file-change":
       return "file_change_approval";
+    case "mcp-tool-call":
+      return "mcp_tool_call_approval";
     default:
       return "unknown";
   }
@@ -527,6 +532,13 @@ function mapToRuntimeEvents(
       ];
     }
 
+    const mcpToolApprovalPayload =
+      event.method === "mcpServer/elicitation/request"
+        ? readPayload(EffectCodexSchema.McpServerElicitationRequestParams, event.payload)
+        : undefined;
+    const mcpToolApproval = mcpToolApprovalPayload
+      ? parseCodexMcpToolApproval(mcpToolApprovalPayload)
+      : null;
     const detail = (() => {
       switch (event.method) {
         case "item/commandExecution/requestApproval": {
@@ -542,6 +554,9 @@ function mapToRuntimeEvents(
             event.payload,
           );
           return payload?.reason ?? undefined;
+        }
+        case "mcpServer/elicitation/request": {
+          return mcpToolApprovalPayload?.message ?? undefined;
         }
         case "applyPatchApproval": {
           const payload = readPayload(
@@ -577,6 +592,11 @@ function mapToRuntimeEvents(
           requestType: toRequestTypeFromMethod(event.method),
           ...(detail ? { detail } : {}),
           ...(event.payload !== undefined ? { args: event.payload } : {}),
+          ...(mcpToolApproval
+            ? {
+                supportsSessionPersistence: mcpToolApproval.supportsSessionPersistence,
+              }
+            : {}),
         },
       },
     ];
