@@ -1341,6 +1341,174 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("keeps parent subagent tools intact and waits for Claude's idle signal", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const runtimeEvents: Array<ProviderRuntimeEvent> = [];
+      const runtimeEventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
+        Effect.sync(() => {
+          runtimeEvents.push(event);
+        }),
+      ).pipe(Effect.forkChild);
+      const waitForEvent = (predicate: (event: ProviderRuntimeEvent) => boolean) =>
+        Effect.gen(function* () {
+          for (let attempt = 0; attempt < 100; attempt += 1) {
+            if (runtimeEvents.some(predicate)) {
+              return;
+            }
+            yield* Effect.yieldNow;
+          }
+          return yield* Effect.die("Timed out waiting for Claude runtime event.");
+        });
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "delegate this",
+        attachments: [],
+      });
+
+      harness.query.emit({
+        type: "stream_event",
+        session_id: "sdk-session-subagent",
+        uuid: "stream-parent-task",
+        parent_tool_use_id: null,
+        event: {
+          type: "content_block_start",
+          index: 0,
+          content_block: {
+            type: "tool_use",
+            id: "tool-parent-task",
+            name: "Task",
+            input: { description: "Inspect the adapter" },
+          },
+        },
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "system",
+        subtype: "task_started",
+        task_id: "task-subagent",
+        tool_use_id: "tool-parent-task",
+        description: "Inspect the adapter",
+        task_type: "agent",
+        session_id: "sdk-session-subagent",
+        uuid: "task-subagent-started",
+      } as unknown as SDKMessage);
+
+      // Child content-block indexes restart at zero. These nested messages
+      // must not replace the parent Task tool stored at the same index.
+      harness.query.emit({
+        type: "stream_event",
+        session_id: "sdk-session-subagent",
+        uuid: "stream-child-tool",
+        parent_tool_use_id: "tool-parent-task",
+        event: {
+          type: "content_block_start",
+          index: 0,
+          content_block: {
+            type: "tool_use",
+            id: "tool-child-read",
+            name: "Read",
+            input: { file_path: "src/index.ts" },
+          },
+        },
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "user",
+        session_id: "sdk-session-subagent",
+        uuid: "child-tool-result",
+        parent_tool_use_id: "tool-parent-task",
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "tool-child-read",
+              content: "ok",
+            },
+          ],
+        },
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "system",
+        subtype: "task_updated",
+        task_id: "task-subagent",
+        patch: { status: "running" },
+        session_id: "sdk-session-subagent",
+        uuid: "task-subagent-updated",
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        errors: [],
+        session_id: "sdk-session-subagent",
+        uuid: "result-before-subagent-idle",
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "system",
+        subtype: "task_progress",
+        task_id: "task-subagent",
+        description: "Still inspecting",
+        usage: { total_tokens: 10, tool_uses: 1, duration_ms: 20 },
+        session_id: "sdk-session-subagent",
+        uuid: "task-subagent-progress",
+      } as unknown as SDKMessage);
+
+      yield* waitForEvent((event) => event.type === "task.progress");
+      assert.equal(
+        runtimeEvents.some((event) => event.type === "turn.completed"),
+        false,
+        "the result must remain pending while Claude reports subagent work",
+      );
+
+      harness.query.emit({
+        type: "system",
+        subtype: "task_notification",
+        task_id: "task-subagent",
+        tool_use_id: "tool-parent-task",
+        status: "completed",
+        output_file: "/tmp/task-subagent.output",
+        summary: "Inspection complete",
+        session_id: "sdk-session-subagent",
+        uuid: "task-subagent-completed",
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "system",
+        subtype: "session_state_changed",
+        state: "idle",
+        session_id: "sdk-session-subagent",
+        uuid: "session-subagent-idle",
+      } as unknown as SDKMessage);
+
+      yield* waitForEvent((event) => event.type === "turn.completed");
+      runtimeEventsFiber.interruptUnsafe();
+
+      const startedItems = runtimeEvents.filter((event) => event.type === "item.started");
+      const completedItems = runtimeEvents.filter((event) => event.type === "item.completed");
+      assert.deepEqual(
+        startedItems.map((event) => String(event.itemId)),
+        ["tool-parent-task"],
+      );
+      assert.deepEqual(
+        completedItems.map((event) => String(event.itemId)),
+        ["tool-parent-task"],
+      );
+      assert.equal(
+        runtimeEvents.some((event) => event.type === "runtime.warning"),
+        false,
+      );
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("treats user-aborted Claude results as interrupted without a runtime error", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
