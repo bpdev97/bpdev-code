@@ -17,6 +17,7 @@ import {
   type OrchestrationThread,
   type OrchestrationThreadActivity,
   type ProviderRuntimeEvent,
+  type ProviderRequestKind,
 } from "@t3tools/contracts";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
@@ -321,7 +322,7 @@ function orchestrationSessionStatusFromRuntimeState(
 
 function requestKindFromCanonicalRequestType(
   requestType: string | undefined,
-): "command" | "file-read" | "file-change" | undefined {
+): ProviderRequestKind | undefined {
   switch (requestType) {
     case "command_execution_approval":
     case "exec_command_approval":
@@ -331,6 +332,8 @@ function requestKindFromCanonicalRequestType(
     case "file_change_approval":
     case "apply_patch_approval":
       return "file-change";
+    case "mcp_tool_call_approval":
+      return "mcp-tool-call";
     default:
       return undefined;
   }
@@ -364,12 +367,17 @@ function runtimeEventToActivities(
                 ? "File-read approval requested"
                 : requestKind === "file-change"
                   ? "File-change approval requested"
-                  : "Approval requested",
+                  : requestKind === "mcp-tool-call"
+                    ? "Computer-use approval requested"
+                    : "Approval requested",
           payload: {
             requestId: toApprovalRequestId(event.requestId),
             ...(requestKind ? { requestKind } : {}),
             requestType: event.payload.requestType,
             ...(event.payload.detail ? { detail: truncateDetail(event.payload.detail) } : {}),
+            ...(event.payload.supportsSessionPersistence !== undefined
+              ? { supportsSessionPersistence: event.payload.supportsSessionPersistence }
+              : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,

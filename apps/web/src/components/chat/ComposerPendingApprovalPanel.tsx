@@ -15,7 +15,9 @@ export const ComposerPendingApprovalPanel = memo(function ComposerPendingApprova
       ? "Command approval requested"
       : approval.requestKind === "file-read"
         ? "File-read approval requested"
-        : "File-change approval requested";
+        : approval.requestKind === "file-change"
+          ? "File-change approval requested"
+          : "Computer-use approval requested";
 
   return (
     <div className="px-4 py-3.5 sm:px-5 sm:py-4">
@@ -26,6 +28,9 @@ export const ComposerPendingApprovalPanel = memo(function ComposerPendingApprova
           <span className="text-xs text-muted-foreground">1/{pendingCount}</span>
         ) : null}
       </div>
+      {approval.detail ? (
+        <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{approval.detail}</p>
+      ) : null}
     </div>
   );
 });

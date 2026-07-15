@@ -836,6 +836,51 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
     }),
   );
 
+  it.effect("maps MCP tool approval elicitations into canonical approval requests", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      yield* runtime.emit({
+        id: asEventId("evt-mcp-tool-approval"),
+        kind: "request",
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "mcpServer/elicitation/request",
+        requestId: ApprovalRequestId.make("req-mcp-tool-1"),
+        requestKind: "mcp-tool-call",
+        payload: {
+          mode: "form",
+          message: "Use computer tool preview_open?",
+          requestedSchema: { type: "object", properties: {} },
+          serverName: "computer-use",
+          threadId: "thread-1",
+          turnId: "turn-1",
+          _meta: {
+            codex_approval_kind: "mcp_tool_call",
+            persist: ["session", "always"],
+          },
+        },
+      } satisfies ProviderEvent);
+
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+
+      NodeAssert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag !== "Some") {
+        return;
+      }
+      NodeAssert.equal(firstEvent.value.type, "request.opened");
+      if (firstEvent.value.type !== "request.opened") {
+        return;
+      }
+      NodeAssert.equal(firstEvent.value.payload.requestType, "mcp_tool_call_approval");
+      NodeAssert.equal(firstEvent.value.payload.detail, "Use computer tool preview_open?");
+      NodeAssert.equal(firstEvent.value.payload.supportsSessionPersistence, true);
+    }),
+  );
+
   it.effect("preserves file-read request type when mapping serverRequest/resolved", () =>
     Effect.gen(function* () {
       const { adapter, runtime } = yield* startLifecycleRuntime();

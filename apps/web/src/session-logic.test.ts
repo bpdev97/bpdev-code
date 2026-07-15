@@ -117,6 +117,34 @@ describe("derivePendingApprovals", () => {
     ]);
   });
 
+  it("derives MCP tool approvals with persistence capabilities", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "approval-open-mcp-tool",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "approval.requested",
+        summary: "Computer-use approval requested",
+        tone: "approval",
+        payload: {
+          requestId: "req-mcp-tool",
+          requestType: "mcp_tool_call_approval",
+          detail: "Use computer tool preview_open?",
+          supportsSessionPersistence: true,
+        },
+      }),
+    ];
+
+    expect(derivePendingApprovals(activities)).toEqual([
+      {
+        requestId: "req-mcp-tool",
+        requestKind: "mcp-tool-call",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        detail: "Use computer tool preview_open?",
+        supportsSessionPersistence: true,
+      },
+    ]);
+  });
+
   it("clears stale pending approvals when provider reports unknown pending request", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({

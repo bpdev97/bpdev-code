@@ -2132,6 +2132,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               <div className="flex flex-wrap items-center justify-end gap-2 px-3 pb-3 sm:px-4">
                 <ComposerPendingApprovalActions
                   requestId={activePendingApproval.requestId}
+                  requestKind={activePendingApproval.requestKind}
+                  supportsSessionPersistence={Boolean(
+                    activePendingApproval.supportsSessionPersistence,
+                  )}
                   isResponding={respondingRequestIds.includes(activePendingApproval.requestId)}
                   onRespondToApproval={onRespondToApproval}
                 />
@@ -2461,6 +2465,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             <div className="flex items-center justify-end gap-2 px-2.5 pb-2.5 sm:px-3 sm:pb-3">
               <ComposerPendingApprovalActions
                 requestId={activePendingApproval.requestId}
+                requestKind={activePendingApproval.requestKind}
+                supportsSessionPersistence={Boolean(
+                  activePendingApproval.supportsSessionPersistence,
+                )}
                 isResponding={respondingRequestIds.includes(activePendingApproval.requestId)}
                 onRespondToApproval={onRespondToApproval}
               />
