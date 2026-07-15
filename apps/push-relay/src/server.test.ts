@@ -3,7 +3,7 @@ import type {
   RelayAgentActivityState,
   RelayAgentAwarenessPreferences,
 } from "@t3tools/contracts/relay";
-import { afterEach, describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type {
   ApnsDeliveryClient,
@@ -182,9 +182,9 @@ describe("personal push relay HTTP integration", () => {
     expect(apns.liveActivities).toHaveLength(0);
   });
 
-  it("replays, updates, and ends a registered Live Activity", async () => {
+  it("notifies separately and keeps a completed Live Activity reusable until its grace period", async () => {
     const apns = new RecordingApnsClient();
-    server = await startServer(config, { apns });
+    server = await startServer(config, { apns, liveActivityEndDelayMs: 250 });
     await registerDevice(server);
     await publish(server, "running");
 
@@ -200,17 +200,37 @@ describe("personal push relay HTTP integration", () => {
     expect(apns.liveActivities.map((delivery) => delivery.aggregate?.activeCount)).toEqual([
       1, 1, 0,
     ]);
-    expect(apns.liveActivities.map((delivery) => delivery.alert)).toEqual([
-      null,
-      {
-        title: "Implement notifications",
-        body: "Approval needed: Push relay",
-      },
-      {
-        title: "Implement notifications",
-        body: "Done: Push relay",
-      },
+    expect(apns.liveActivities.map((delivery) => delivery.event)).toEqual([
+      "update",
+      "update",
+      "update",
     ]);
-    expect(apns.notifications).toHaveLength(0);
+    expect(apns.liveActivities.map((delivery) => delivery.alert)).toEqual([null, null, null]);
+    expect(apns.notifications.map((delivery) => delivery.state.phase)).toEqual([
+      "waiting_for_approval",
+      "completed",
+    ]);
+
+    await publish(server, "running");
+    expect(apns.liveActivities.at(-1)).toMatchObject({
+      event: "update",
+      aggregate: { activeCount: 1 },
+    });
+
+    await publish(server, "completed");
+    expect(apns.liveActivities.at(-1)).toMatchObject({
+      event: "update",
+      aggregate: { activeCount: 0 },
+    });
+    await vi.waitFor(() => expect(apns.liveActivities).toHaveLength(6), { timeout: 2_000 });
+    expect(apns.liveActivities.at(-1)).toMatchObject({
+      event: "end",
+      aggregate: { activeCount: 0 },
+    });
+    expect(apns.notifications.map((delivery) => delivery.state.phase)).toEqual([
+      "waiting_for_approval",
+      "completed",
+      "completed",
+    ]);
   });
 });

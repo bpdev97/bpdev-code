@@ -14,6 +14,7 @@ COPY patches ./patches
 COPY scripts/package.json ./scripts/package.json
 COPY apps/push-relay/package.json ./apps/push-relay/package.json
 COPY packages/contracts/package.json ./packages/contracts/package.json
+COPY packages/shared/package.json ./packages/shared/package.json
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile --ignore-scripts --filter @bpdev/push-relay...
 
