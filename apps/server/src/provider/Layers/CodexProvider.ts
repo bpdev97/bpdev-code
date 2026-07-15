@@ -62,6 +62,28 @@ const REASONING_EFFORT_LABELS: Readonly<Record<string, string>> = {
 
 const DEFAULT_SERVICE_TIER_ID = "default";
 
+const APPROVAL_REVIEWER_OPTION: ProviderOptionDescriptor = {
+  id: "approvalsReviewer",
+  label: "Approval reviewer",
+  description:
+    "Choose whether you or Codex reviews actions that cross the active sandbox boundary.",
+  type: "select",
+  options: [
+    {
+      id: "user",
+      label: "Ask me",
+      description: "Pause and ask you when an action needs approval.",
+      isDefault: true,
+    },
+    {
+      id: "auto_review",
+      label: "Auto-review",
+      description: "Use a separate Codex reviewer to approve or deny the action based on risk.",
+    },
+  ],
+  currentValue: "user",
+};
+
 function reasoningEffortLabel(reasoningEffort: string): string {
   return REASONING_EFFORT_LABELS[reasoningEffort] ?? reasoningEffort;
 }
@@ -168,6 +190,7 @@ export function mapCodexModelCapabilities(
       currentValue: defaultServiceTier,
     });
   }
+  optionDescriptors.push(APPROVAL_REVIEWER_OPTION);
 
   return createModelCapabilities({
     optionDescriptors,

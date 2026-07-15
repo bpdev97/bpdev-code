@@ -92,6 +92,9 @@ export type CodexTurnStartParamsWithCollaborationMode =
 
 export type CodexResumeCursor = typeof CodexResumeCursorSchema.Type;
 type CodexServiceTier = NonNullable<EffectCodexSchema.V2ThreadStartParams["serviceTier"]>;
+type CodexApprovalsReviewer = NonNullable<
+  EffectCodexSchema.V2ThreadStartParams["approvalsReviewer"]
+>;
 type CodexThreadItem =
   | EffectCodexSchema.V2ThreadReadResponse["thread"]["turns"][number]["items"][number]
   | EffectCodexSchema.V2ThreadRollbackResponse["thread"]["turns"][number]["items"][number];
@@ -106,6 +109,7 @@ export interface CodexSessionRuntimeOptions {
   readonly runtimeMode: RuntimeMode;
   readonly model?: string;
   readonly serviceTier?: CodexServiceTier | undefined;
+  readonly approvalsReviewer?: CodexApprovalsReviewer | undefined;
   readonly resumeCursor?: CodexResumeCursor;
   readonly appServerArgs?: ReadonlyArray<string>;
 }
@@ -118,6 +122,7 @@ export interface CodexSessionRuntimeSendTurnInput {
   }>;
   readonly model?: string;
   readonly serviceTier?: CodexServiceTier | undefined;
+  readonly approvalsReviewer?: CodexApprovalsReviewer | undefined;
   readonly effort?: EffectCodexSchema.V2TurnStartParams__ReasoningEffort | undefined;
   readonly interactionMode?: ProviderInteractionMode;
 }
@@ -291,6 +296,7 @@ function buildThreadStartParams(input: {
   readonly runtimeMode: RuntimeMode;
   readonly model: string | undefined;
   readonly serviceTier: CodexServiceTier | undefined;
+  readonly approvalsReviewer: CodexApprovalsReviewer | undefined;
 }): EffectCodexSchema.V2ThreadStartParams {
   const config = runtimeModeToThreadConfig(input.runtimeMode);
   return {
@@ -299,6 +305,7 @@ function buildThreadStartParams(input: {
     sandbox: config.sandbox,
     ...(input.model ? { model: input.model } : {}),
     ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
+    ...(input.approvalsReviewer ? { approvalsReviewer: input.approvalsReviewer } : {}),
   };
 }
 
@@ -354,6 +361,7 @@ export function buildTurnStartParams(input: {
   }>;
   readonly model?: string;
   readonly serviceTier?: CodexServiceTier;
+  readonly approvalsReviewer?: CodexApprovalsReviewer;
   readonly effort?: EffectCodexSchema.V2TurnStartParams__ReasoningEffort;
   readonly interactionMode?: ProviderInteractionMode;
 }): Effect.Effect<
@@ -385,6 +393,7 @@ export function buildTurnStartParams(input: {
     sandboxPolicy: runtimeModeToTurnSandboxPolicy(input.runtimeMode),
     ...(input.model ? { model: input.model } : {}),
     ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
+    ...(input.approvalsReviewer ? { approvalsReviewer: input.approvalsReviewer } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
     ...(collaborationMode ? { collaborationMode } : {}),
   }).pipe(
@@ -446,6 +455,7 @@ export const openCodexThread = (input: {
   readonly cwd: string;
   readonly requestedModel: string | undefined;
   readonly serviceTier: CodexServiceTier | undefined;
+  readonly approvalsReviewer: CodexApprovalsReviewer | undefined;
   readonly resumeThreadId: string | undefined;
 }): Effect.Effect<CodexThreadOpenResponse, CodexErrors.CodexAppServerError> => {
   const resumeThreadId = input.resumeThreadId;
@@ -454,6 +464,7 @@ export const openCodexThread = (input: {
     runtimeMode: input.runtimeMode,
     model: input.requestedModel,
     serviceTier: input.serviceTier,
+    approvalsReviewer: input.approvalsReviewer,
   });
 
   if (resumeThreadId === undefined) {
@@ -1257,6 +1268,7 @@ export const makeCodexSessionRuntime = (
         cwd: options.cwd,
         requestedModel,
         serviceTier: options.serviceTier,
+        approvalsReviewer: options.approvalsReviewer,
         resumeThreadId: readResumeCursorThreadId(options.resumeCursor),
       });
 
@@ -1330,6 +1342,7 @@ export const makeCodexSessionRuntime = (
             ...(input.attachments ? { attachments: input.attachments } : {}),
             ...(normalizedModel ? { model: normalizedModel } : {}),
             ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
+            ...(input.approvalsReviewer ? { approvalsReviewer: input.approvalsReviewer } : {}),
             ...(input.effort ? { effort: input.effort } : {}),
             ...(input.interactionMode ? { interactionMode: input.interactionMode } : {}),
           });
