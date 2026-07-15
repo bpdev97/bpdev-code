@@ -59,6 +59,7 @@ feature.
 | `FORK-HERMES-001` | Hermes Agent provider and automation management   | Active, early access | [`docs/fork/hermes.md`](docs/fork/hermes.md)                                     | `vp test apps/server/src/provider/hermes packages/contracts/src/settings.test.ts packages/client-runtime/src/operations/hermesAutomations.test.ts apps/web/src/components/settings/SettingsPanels.logic.test.ts`                                                                                                                                                                                                                                   |
 | `FORK-PUSH-001`   | Tailnet APNs notification and Live Activity relay | Active               | [`docs/fork/personal-push-relay.md`](docs/fork/personal-push-relay.md)           | `vp test apps/push-relay/src apps/server/src/personalPush apps/server/src/serverSettings.test.ts apps/server/src/relay/AgentAwarenessRelay.test.ts apps/mobile/src/features/agent-awareness/remoteRegistration.test.ts packages/contracts/src/settings.test.ts`                                                                                                                                                                                    |
 | `FORK-CODEX-001`  | Codex MCP tool approval prompts                   | Active, temporary    | [`docs/fork/codex-mcp-tool-approvals.md`](docs/fork/codex-mcp-tool-approvals.md) | `vp test apps/server/src/provider/CodexMcpApproval.test.ts apps/server/src/provider/Layers/CodexAdapter.test.ts apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.test.ts apps/web/src/session-logic.test.ts apps/mobile/src/lib/threadActivity.test.ts`                                                                                                                                                                               |
+| `FORK-CODEX-002`  | Codex automatic approval reviewer                 | Active, temporary    | [`docs/fork/codex-auto-review.md`](docs/fork/codex-auto-review.md)               | `vp test apps/server/src/codexModelOptions.test.ts apps/server/src/provider/Layers/CodexProvider.test.ts apps/server/src/provider/Layers/CodexAdapter.test.ts apps/server/src/provider/Layers/CodexSessionRuntime.test.ts`                                                                                                                                                                                                                         |
 
 ### FORK-CODEX-001 ownership map
 
@@ -86,6 +87,21 @@ Remove this feature when upstream T3 handles Codex `mcpServer/elicitation/reques
 with `codex_approval_kind: "mcp_tool_call"`, including session-persistence metadata and web/mobile
 approval rendering. Preserve the immediate cancel response for unsupported structured or URL
 elicitations unless upstream adds a complete input flow for them.
+
+### FORK-CODEX-002 ownership map
+
+Shared upstream touchpoints containing the auto-review option and app-server overrides:
+
+- `apps/server/src/codexModelOptions.ts`
+- `apps/server/src/provider/Layers/CodexProvider.ts`
+- `apps/server/src/provider/Layers/CodexAdapter.ts`
+- `apps/server/src/provider/Layers/CodexSessionRuntime.ts`
+- focused tests for those modules
+
+The setting is a Codex model option so the existing provider-specific controls render it on web and
+mobile without widening the shared runtime modes. Preserve the `user` default and pass the selected
+reviewer on thread start, resume, and subsequent turns. Remove this feature when upstream T3 exposes
+Codex `approvalsReviewer` with equivalent per-thread persistence and web/mobile controls.
 
 ### FORK-PUSH-001 ownership map
 

@@ -131,6 +131,7 @@ describe("buildTurnStartParams", () => {
         runtimeMode: "auto-accept-edits",
         prompt: "Implement it",
         model: "gpt-5.3-codex",
+        approvalsReviewer: "auto_review",
         interactionMode: "default",
         attachments: [
           {
@@ -158,6 +159,7 @@ describe("buildTurnStartParams", () => {
         },
       ],
       model: "gpt-5.3-codex",
+      approvalsReviewer: "auto_review",
       collaborationMode: {
         mode: "default",
         settings: {
@@ -269,7 +271,10 @@ describe("isRecoverableThreadResumeError", () => {
 describe("openCodexThread", () => {
   it.effect("falls back to thread/start when resume fails recoverably", () =>
     Effect.gen(function* () {
-      const calls: Array<{ method: "thread/start" | "thread/resume"; payload: unknown }> = [];
+      const calls: Array<{
+        method: "thread/start" | "thread/resume";
+        payload: CodexRpc.ClientRequestParamsByMethod["thread/start" | "thread/resume"];
+      }> = [];
       const started = makeThreadOpenResponse("fresh-thread");
       const client = {
         request: <M extends "thread/start" | "thread/resume">(
@@ -296,6 +301,7 @@ describe("openCodexThread", () => {
         cwd: "/tmp/project",
         requestedModel: "gpt-5.3-codex",
         serviceTier: undefined,
+        approvalsReviewer: "auto_review",
         resumeThreadId: "stale-thread",
       });
 
@@ -304,6 +310,9 @@ describe("openCodexThread", () => {
         calls.map((call) => call.method),
         ["thread/resume", "thread/start"],
       );
+      for (const call of calls) {
+        NodeAssert.equal(call.payload.approvalsReviewer, "auto_review");
+      }
     }),
   );
 
@@ -335,6 +344,7 @@ describe("openCodexThread", () => {
         cwd: "/tmp/project",
         requestedModel: "gpt-5.3-codex",
         serviceTier: undefined,
+        approvalsReviewer: undefined,
         resumeThreadId: "stale-thread",
       }).pipe(Effect.flip);
 

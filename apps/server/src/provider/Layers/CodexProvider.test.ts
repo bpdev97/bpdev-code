@@ -1,6 +1,29 @@
 import { assert, it } from "@effect/vitest";
+import type { ProviderOptionDescriptor } from "@t3tools/contracts";
 
 import { mapCodexModelCapabilities } from "./CodexProvider.ts";
+
+const APPROVAL_REVIEWER_DESCRIPTOR: ProviderOptionDescriptor = {
+  id: "approvalsReviewer",
+  label: "Approval reviewer",
+  description:
+    "Choose whether you or Codex reviews actions that cross the active sandbox boundary.",
+  type: "select",
+  options: [
+    {
+      id: "user",
+      label: "Ask me",
+      description: "Pause and ask you when an action needs approval.",
+      isDefault: true,
+    },
+    {
+      id: "auto_review",
+      label: "Auto-review",
+      description: "Use a separate Codex reviewer to approve or deny the action based on risk.",
+    },
+  ],
+  currentValue: "user",
+};
 
 it("maps current Codex model capability fields", () => {
   const capabilities = mapCodexModelCapabilities({
@@ -61,6 +84,7 @@ it("maps current Codex model capability fields", () => {
       ],
       currentValue: "flex",
     },
+    APPROVAL_REVIEWER_DESCRIPTOR,
   ]);
 });
 
@@ -100,5 +124,6 @@ it("uses standard routing when the catalog has no default service tier", () => {
       ],
       currentValue: "default",
     },
+    APPROVAL_REVIEWER_DESCRIPTOR,
   ]);
 });

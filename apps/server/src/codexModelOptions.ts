@@ -12,3 +12,10 @@ export function getCodexServiceTierOptionValue(
     (getModelSelectionBooleanOptionValue(modelSelection, "fastMode") === true ? "fast" : undefined)
   );
 }
+
+export function getCodexApprovalsReviewerOptionValue(
+  modelSelection: ModelSelection | null | undefined,
+): "user" | "auto_review" | undefined {
+  const value = getModelSelectionStringOptionValue(modelSelection, "approvalsReviewer");
+  return value === "user" || value === "auto_review" ? value : undefined;
+}
