@@ -106,6 +106,7 @@ export type AcpParsedSessionEvent =
   | {
       readonly _tag: "ContentDelta";
       readonly itemId?: string;
+      readonly messageId?: string;
       readonly streamKind: "assistant_text" | "reasoning_text";
       readonly text: string;
       readonly rawPayload: unknown;
@@ -319,6 +320,7 @@ function makeToolCallState(
   },
   options?: {
     readonly fallbackStatus?: "pending" | "inProgress" | "completed" | "failed";
+    readonly isPatch?: boolean;
   },
 ): AcpToolCallState | undefined {
   const toolCallId = input.toolCallId.trim();
@@ -369,10 +371,13 @@ function makeToolCallState(
       })
     : undefined;
   const status = normalizeToolCallStatus(input.status, options?.fallbackStatus);
+  const canNameToolCall = title !== undefined || kind !== undefined || command !== undefined;
   return {
     toolCallId,
     ...(kind ? { kind } : {}),
-    ...(presentation?.summary ? { title: presentation.summary } : {}),
+    ...(presentation?.summary && (options?.isPatch !== true || canNameToolCall)
+      ? { title: presentation.summary }
+      : {}),
     ...(status ? { status } : {}),
     ...(command ? { command } : {}),
     ...(presentation?.detail ? { detail: presentation.detail } : {}),
@@ -384,6 +389,7 @@ function parseTypedToolCallState(
   event: AcpToolCallUpdate,
   options?: {
     readonly fallbackStatus?: "pending" | "inProgress" | "completed" | "failed";
+    readonly isPatch?: boolean;
   },
 ): AcpToolCallState | undefined {
   return makeToolCallState(
@@ -555,7 +561,7 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
       break;
     }
     case "tool_call_update": {
-      const toolCall = parseTypedToolCallState(upd);
+      const toolCall = parseTypedToolCallState(upd, { isPatch: true });
       if (toolCall) {
         events.push({
           _tag: "ToolCallUpdated",
@@ -569,6 +575,7 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
       if (upd.content.type === "text" && upd.content.text.length > 0) {
         events.push({
           _tag: "ContentDelta",
+          ...(upd.messageId?.trim() ? { messageId: upd.messageId.trim() } : {}),
           streamKind: "assistant_text",
           text: upd.content.text,
           rawPayload: params,
@@ -580,6 +587,7 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
       if (upd.content.type === "text" && upd.content.text.length > 0) {
         events.push({
           _tag: "ContentDelta",
+          ...(upd.messageId?.trim() ? { messageId: upd.messageId.trim() } : {}),
           streamKind: "reasoning_text",
           text: upd.content.text,
           rawPayload: params,

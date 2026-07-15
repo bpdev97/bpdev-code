@@ -269,6 +269,7 @@ type AcpStartState =
 interface AcpAssistantSegmentState {
   readonly nextSegmentIndex: number;
   readonly activeItemId?: string;
+  readonly activeMessageId?: string;
 }
 
 interface EnsureActiveAssistantSegmentResult {
@@ -934,10 +935,23 @@ const handleSessionUpdate = ({
             continue;
           }
         }
+        const assistantSegmentState = yield* Ref.get(assistantSegmentRef);
+        if (
+          assistantSegmentState.activeItemId &&
+          assistantSegmentState.activeMessageId !== undefined &&
+          event.messageId !== undefined &&
+          assistantSegmentState.activeMessageId !== event.messageId
+        ) {
+          yield* closeActiveAssistantSegment({
+            queue,
+            assistantSegmentRef,
+          });
+        }
         const itemId = yield* ensureActiveAssistantSegment({
           queue,
           assistantSegmentRef,
           sessionId: params.sessionId,
+          ...(event.messageId !== undefined ? { messageId: event.messageId } : {}),
         });
         yield* Queue.offer(queue, {
           ...event,
@@ -982,16 +996,23 @@ const ensureActiveAssistantSegment = ({
   queue,
   assistantSegmentRef,
   sessionId,
+  messageId,
 }: {
   readonly queue: Queue.Queue<AcpSessionRuntimeEvent>;
   readonly assistantSegmentRef: Ref.Ref<AcpAssistantSegmentState>;
   readonly sessionId: string;
+  readonly messageId?: string;
 }) =>
   Ref.modify<AcpAssistantSegmentState, EnsureActiveAssistantSegmentResult>(
     assistantSegmentRef,
     (current) => {
       if (current.activeItemId) {
-        return [{ itemId: current.activeItemId }, current] as const;
+        return [
+          { itemId: current.activeItemId },
+          current.activeMessageId === undefined && messageId !== undefined
+            ? { ...current, activeMessageId: messageId }
+            : current,
+        ] as const;
       }
       const itemId = assistantItemId(sessionId, current.nextSegmentIndex);
       return [
@@ -1005,6 +1026,7 @@ const ensureActiveAssistantSegment = ({
         {
           nextSegmentIndex: current.nextSegmentIndex + 1,
           activeItemId: itemId,
+          ...(messageId !== undefined ? { activeMessageId: messageId } : {}),
         } satisfies AcpAssistantSegmentState,
       ] as const;
     },
