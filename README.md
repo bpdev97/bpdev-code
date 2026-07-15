@@ -10,7 +10,7 @@ T3 Code is a minimal web GUI for coding agents (currently Codex, Claude, Cursor,
 >
 > - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
 > - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
-> - Cursor: install [Cursor CLI](https://cursor.com/cli) and run `cursor-agent login`
+> - Cursor: install [Cursor CLI](https://cursor.com/cli) and run `agent login`
 > - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
 
 ### Run without installing

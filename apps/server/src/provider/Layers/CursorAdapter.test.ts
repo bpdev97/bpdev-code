@@ -1087,6 +1087,207 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
     }),
   );
 
+  it.effect("returns documented Cursor ask-question outcomes with selected option ids", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CursorAdapter;
+      const serverSettings = yield* ServerSettingsService;
+      const threadId = ThreadId.make("cursor-ask-question-response");
+      const requested = yield* Deferred.make<void>();
+
+      const wrapperPath = yield* Effect.promise(() =>
+        makeMockAgentWrapper({ T3_ACP_EMIT_ASK_QUESTION: "1" }),
+      );
+      yield* serverSettings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
+
+      const eventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
+        Effect.gen(function* () {
+          if (
+            String(event.threadId) !== String(threadId) ||
+            event.type !== "user-input.requested" ||
+            !event.requestId
+          ) {
+            return;
+          }
+          yield* adapter.respondToUserInput(
+            threadId,
+            ApprovalRequestId.make(String(event.requestId)),
+            { scope: "Workspace" },
+          );
+          yield* Deferred.succeed(requested, undefined).pipe(Effect.ignore);
+        }),
+      ).pipe(Effect.forkChild);
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("cursor"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+        modelSelection: { instanceId: ProviderInstanceId.make("cursor"), model: "default" },
+      });
+      yield* adapter.sendTurn({
+        threadId,
+        input: "ask a Cursor question",
+        attachments: [],
+      });
+      yield* Deferred.await(requested);
+      yield* Fiber.interrupt(eventsFiber);
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
+  it.effect("blocks Cursor plan creation on explicit user approval", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CursorAdapter;
+      const serverSettings = yield* ServerSettingsService;
+      const threadId = ThreadId.make("cursor-create-plan-approval");
+      const runtimeEvents: Array<ProviderRuntimeEvent> = [];
+
+      const wrapperPath = yield* Effect.promise(() =>
+        makeMockAgentWrapper({ T3_ACP_EMIT_CREATE_PLAN: "1" }),
+      );
+      yield* serverSettings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
+
+      const eventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
+        Effect.gen(function* () {
+          if (String(event.threadId) !== String(threadId)) return;
+          runtimeEvents.push(event);
+          if (event.type === "user-input.requested" && event.requestId) {
+            yield* adapter.respondToUserInput(
+              threadId,
+              ApprovalRequestId.make(String(event.requestId)),
+              { "cursor-plan-approval": "Accept plan" },
+            );
+          }
+        }),
+      ).pipe(Effect.forkChild);
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("cursor"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+        modelSelection: { instanceId: ProviderInstanceId.make("cursor"), model: "default" },
+      });
+      yield* adapter.sendTurn({
+        threadId,
+        input: "create a Cursor plan",
+        attachments: [],
+        interactionMode: "plan",
+      });
+      yield* Fiber.interrupt(eventsFiber);
+
+      const proposed = runtimeEvents.find((event) => event.type === "turn.proposed.completed");
+      assert.isDefined(proposed);
+      if (proposed?.type === "turn.proposed.completed") {
+        assert.include(proposed.payload.planMarkdown, "# Mock implementation plan");
+      }
+      const opened = runtimeEvents.find((event) => event.type === "user-input.requested");
+      const resolved = runtimeEvents.find((event) => event.type === "user-input.resolved");
+      assert.isDefined(opened);
+      assert.isDefined(resolved);
+      if (opened?.type === "user-input.requested") {
+        assert.deepStrictEqual(opened.payload.questions[0]?.options, [
+          {
+            label: "Accept plan",
+            description: "Allow Cursor to continue with this plan.",
+          },
+          {
+            label: "Reject plan",
+            description: "Reject the plan and stop this plan step.",
+          },
+        ]);
+      }
+      if (resolved?.type === "user-input.resolved") {
+        assert.deepStrictEqual(resolved.payload.answers, {
+          "cursor-plan-approval": "Accept plan",
+        });
+      }
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
+  it.effect("preserves Cursor thought chunks as reasoning content", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CursorAdapter;
+      const serverSettings = yield* ServerSettingsService;
+      const threadId = ThreadId.make("cursor-reasoning-stream");
+
+      const wrapperPath = yield* Effect.promise(() =>
+        makeMockAgentWrapper({ T3_ACP_EMIT_AGENT_THOUGHT: "1" }),
+      );
+      yield* serverSettings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
+      const deltasFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter(
+          (event): event is Extract<ProviderRuntimeEvent, { type: "content.delta" }> =>
+            event.type === "content.delta" && String(event.threadId) === String(threadId),
+        ),
+        Stream.take(2),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("cursor"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+        modelSelection: { instanceId: ProviderInstanceId.make("cursor"), model: "default" },
+      });
+      yield* adapter.sendTurn({ threadId, input: "think then answer", attachments: [] });
+
+      const deltas = Array.from(yield* Fiber.join(deltasFiber));
+      assert.deepStrictEqual(
+        deltas.map((event) => [event.payload.streamKind, event.payload.delta]),
+        [
+          ["reasoning_text", "mock reasoning"],
+          ["assistant_text", "hello from mock"],
+        ],
+      );
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
+  it.effect("projects Cursor task and generated-image notifications as completed activity", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CursorAdapter;
+      const serverSettings = yield* ServerSettingsService;
+      const threadId = ThreadId.make("cursor-extension-notifications");
+
+      const wrapperPath = yield* Effect.promise(() =>
+        makeMockAgentWrapper({ T3_ACP_EMIT_CURSOR_NOTIFICATIONS: "1" }),
+      );
+      yield* serverSettings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
+      const itemsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter(
+          (event): event is Extract<ProviderRuntimeEvent, { type: "item.completed" }> =>
+            event.type === "item.completed" && String(event.threadId) === String(threadId),
+        ),
+        Stream.take(2),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("cursor"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+        modelSelection: { instanceId: ProviderInstanceId.make("cursor"), model: "default" },
+      });
+      yield* adapter.sendTurn({ threadId, input: "emit extension activity", attachments: [] });
+
+      const items = Array.from(yield* Fiber.join(itemsFiber));
+      assert.deepStrictEqual(
+        items.map((event) => [event.payload.title, event.payload.detail, event.raw?.method]),
+        [
+          ["Completed subagent task", "Explore the provider adapter", "cursor/task"],
+          ["Generated image", "/tmp/provider-diagram.png", "cursor/generate_image"],
+        ],
+      );
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
   it.effect("stopping a session settles pending user-input waits", () =>
     Effect.gen(function* () {
       const adapter = yield* CursorAdapter;

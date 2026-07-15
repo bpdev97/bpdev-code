@@ -18,8 +18,11 @@ const emitInterleavedAssistantToolCalls =
   process.env.T3_ACP_EMIT_INTERLEAVED_ASSISTANT_TOOL_CALLS === "1";
 const emitGenericToolPlaceholders = process.env.T3_ACP_EMIT_GENERIC_TOOL_PLACEHOLDERS === "1";
 const emitAgentThought = process.env.T3_ACP_EMIT_AGENT_THOUGHT === "1";
+const emitMessageIds = process.env.T3_ACP_EMIT_MESSAGE_IDS === "1";
 const useHermesModes = process.env.T3_ACP_USE_HERMES_MODES === "1";
 const emitAskQuestion = process.env.T3_ACP_EMIT_ASK_QUESTION === "1";
+const emitCreatePlan = process.env.T3_ACP_EMIT_CREATE_PLAN === "1";
+const emitCursorNotifications = process.env.T3_ACP_EMIT_CURSOR_NOTIFICATIONS === "1";
 const emitXAiAskUserQuestion = process.env.T3_ACP_EMIT_XAI_ASK_USER_QUESTION === "1";
 const emitXAiPromptCompleteThenHang = process.env.T3_ACP_EMIT_XAI_PROMPT_COMPLETE_THEN_HANG === "1";
 const emitForeignSessionUpdates = process.env.T3_ACP_EMIT_FOREIGN_SESSION_UPDATES === "1";
@@ -820,7 +823,7 @@ const program = Effect.gen(function* () {
       }
 
       if (emitAskQuestion) {
-        yield* agent.client.extRequest("cursor/ask_question", {
+        const result = yield* agent.client.extRequest("cursor/ask_question", {
           toolCallId: "ask-question-tool-call-1",
           title: "Question",
           questions: [
@@ -834,7 +837,92 @@ const program = Effect.gen(function* () {
             },
           ],
         });
+        if (
+          typeof result !== "object" ||
+          result === null ||
+          !("outcome" in result) ||
+          typeof result.outcome !== "object" ||
+          result.outcome === null ||
+          !("outcome" in result.outcome)
+        ) {
+          throw new Error("Expected cursor/ask_question response outcome.");
+        }
 
+        return { stopReason: "end_turn" };
+      }
+
+      if (emitCreatePlan) {
+        const result = yield* agent.client.extRequest("cursor/create_plan", {
+          toolCallId: "create-plan-tool-call-1",
+          name: "Mock implementation plan",
+          overview: "Verify explicit plan approval.",
+          plan: "# Mock implementation plan\n\n1. Inspect state\n2. Apply fix",
+          todos: [
+            { id: "inspect", content: "Inspect state", status: "completed" },
+            { id: "fix", content: "Apply fix", status: "pending" },
+          ],
+          isProject: false,
+        });
+        if (
+          typeof result !== "object" ||
+          result === null ||
+          !("outcome" in result) ||
+          typeof result.outcome !== "object" ||
+          result.outcome === null ||
+          !("outcome" in result.outcome) ||
+          result.outcome.outcome !== "accepted"
+        ) {
+          throw new Error("Expected accepted cursor/create_plan response outcome.");
+        }
+        return { stopReason: "end_turn" };
+      }
+
+      if (emitCursorNotifications) {
+        yield* agent.client.extNotification("cursor/task", {
+          toolCallId: "cursor-task-1",
+          description: "Explore the provider adapter",
+          prompt: "Inspect Cursor ACP handling",
+          subagentType: "explore",
+          model: "fast",
+          agentId: "agent-1",
+          durationMs: 250,
+        });
+        yield* agent.client.extNotification("cursor/generate_image", {
+          toolCallId: "cursor-image-1",
+          description: "Generate a provider diagram",
+          filePath: "/tmp/provider-diagram.png",
+          referenceImagePaths: [],
+        });
+        return { stopReason: "end_turn" };
+      }
+
+      if (emitMessageIds) {
+        const firstMessageId = "cf9cc699-e589-44d6-93cd-1f28fd288af4";
+        const secondMessageId = "22b80b51-ae14-473b-91cd-f7e29f602d31";
+        yield* agent.client.sessionUpdate({
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            messageId: firstMessageId,
+            content: { type: "text", text: "first " },
+          },
+        });
+        yield* agent.client.sessionUpdate({
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            messageId: firstMessageId,
+            content: { type: "text", text: "message" },
+          },
+        });
+        yield* agent.client.sessionUpdate({
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            messageId: secondMessageId,
+            content: { type: "text", text: "second message" },
+          },
+        });
         return { stopReason: "end_turn" };
       }
 

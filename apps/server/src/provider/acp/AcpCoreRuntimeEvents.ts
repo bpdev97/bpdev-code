@@ -164,6 +164,8 @@ export function makeAcpToolCallEvent(input: {
   readonly turnId: TurnId | undefined;
   readonly toolCall: AcpToolCallState;
   readonly rawPayload: unknown;
+  readonly source?: AcpAdapterRawSource;
+  readonly method?: string;
 }): ProviderRuntimeEvent {
   const runtimeStatus = runtimeItemStatusFromAcpToolStatus(input.toolCall.status);
   return {
@@ -184,8 +186,8 @@ export function makeAcpToolCallEvent(input: {
       ...(Object.keys(input.toolCall.data).length > 0 ? { data: input.toolCall.data } : {}),
     },
     raw: {
-      source: "acp.jsonrpc",
-      method: "session/update",
+      source: input.source ?? "acp.jsonrpc",
+      method: input.method ?? "session/update",
       payload: input.rawPayload,
     },
   };
