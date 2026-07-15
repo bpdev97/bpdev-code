@@ -68,7 +68,7 @@ describe("APNs request construction", () => {
     const now = Date.parse("2026-07-14T12:01:00.000Z");
     const request = makeLiveActivityRequest(
       apnsConfig,
-      { token: "activity-token", aggregate, alert: null },
+      { token: "activity-token", aggregate, alert: null, event: "update" },
       now,
     );
 
@@ -97,13 +97,18 @@ describe("APNs request construction", () => {
     const alert = { title: "Implement notifications", body: "Approval needed: Push relay" };
     const update = makeLiveActivityRequest(
       apnsConfig,
-      { token: "activity-token", aggregate, alert },
+      { token: "activity-token", aggregate, alert, event: "update" },
       now,
     );
     const terminalAggregate = { ...aggregate, activeCount: 0 };
+    const terminalUpdate = makeLiveActivityRequest(
+      apnsConfig,
+      { token: "activity-token", aggregate: terminalAggregate, alert: null, event: "update" },
+      now,
+    );
     const end = makeLiveActivityRequest(
       apnsConfig,
-      { token: "activity-token", aggregate: terminalAggregate, alert: null },
+      { token: "activity-token", aggregate: terminalAggregate, alert: null, event: "end" },
       now,
     );
 
@@ -111,10 +116,13 @@ describe("APNs request construction", () => {
     expect(update.payload).toMatchObject({
       aps: { event: "update", alert: { ...alert, sound: "default" } },
     });
+    expect(terminalUpdate.priority).toBe("5");
+    expect(terminalUpdate.payload).toMatchObject({ aps: { event: "update" } });
     expect(end.priority).toBe("10");
     expect(end.payload).toMatchObject({
       aps: {
         event: "end",
+        "dismissal-date": Math.floor(now / 1_000),
         "content-state": {
           name: "AgentActivity",
           props: JSON.stringify(terminalAggregate),

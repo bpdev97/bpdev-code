@@ -1,6 +1,7 @@
 import * as NodeCrypto from "node:crypto";
 import * as NodeHttp from "node:http";
 import type * as NodeNet from "node:net";
+import * as NodeTimersPromises from "node:timers/promises";
 import {
   PersonalPushActivityPublishRequest,
   RelayDeviceRegistrationRequest,
@@ -8,11 +9,12 @@ import {
 } from "@t3tools/contracts/relay";
 import * as Schema from "effect/Schema";
 
-import { ApnsClient, type ApnsDeliveryClient, liveActivityAlert, shouldNotify } from "./apns.ts";
+import { ApnsClient, type ApnsDeliveryClient, liveActivityAlert } from "./apns.ts";
 import type { RelayConfig } from "./config.ts";
 import { RelayStore, type DeliveryTarget } from "./store.ts";
 
 const MAX_BODY_BYTES = 64 * 1_024;
+const LIVE_ACTIVITY_END_DELAY_MS = 5 * 60 * 1_000;
 const decodeDevice = Schema.decodeUnknownSync(RelayDeviceRegistrationRequest);
 const decodeLiveActivity = Schema.decodeUnknownSync(RelayLiveActivityRegistrationRequest);
 const decodePublish = Schema.decodeUnknownSync(PersonalPushActivityPublishRequest);
@@ -88,6 +90,7 @@ export interface PushRelayServer {
 
 export interface PushRelayServerDependencies {
   readonly apns?: ApnsDeliveryClient;
+  readonly liveActivityEndDelayMs?: number;
 }
 
 export async function startServer(
@@ -102,7 +105,69 @@ export async function startServer(
     string,
     { readonly token: string; readonly registeredAt: number }
   >();
+  const activityEndTimers = new Map<string, AbortController>();
+  const activityEndDelayMs = dependencies.liveActivityEndDelayMs ?? LIVE_ACTIVITY_END_DELAY_MS;
   let publishQueue = Promise.resolve();
+
+  const cancelActivityEnd = (deviceId: string): void => {
+    const controller = activityEndTimers.get(deviceId);
+    if (!controller) return;
+    controller.abort();
+    activityEndTimers.delete(deviceId);
+  };
+
+  const endLiveActivity = async (deviceId: string, token: string): Promise<void> => {
+    const target = store.target(deviceId);
+    const aggregate = store.aggregate();
+    if (
+      !target?.activityPushToken ||
+      target.activityPushToken !== token ||
+      !target.preferences.liveActivitiesEnabled ||
+      (aggregate?.activeCount ?? 0) > 0
+    ) {
+      return;
+    }
+    const result = await apns.sendLiveActivity({
+      token,
+      bundleId: target.bundleId,
+      environment: target.apsEnvironment,
+      aggregate,
+      alert: null,
+      event: "end",
+    });
+    if (result.ok || result.invalidToken) {
+      store.clearActivityToken(deviceId);
+    }
+    if (!result.ok) {
+      console.warn("APNs Live Activity end failed", {
+        deviceId,
+        tokenSuffix: token.slice(-8),
+        status: result.status,
+        reason: result.reason,
+      });
+    }
+  };
+
+  const scheduleActivityEnd = (deviceId: string, token: string): void => {
+    cancelActivityEnd(deviceId);
+    const controller = new AbortController();
+    activityEndTimers.set(deviceId, controller);
+    void NodeTimersPromises.setTimeout(activityEndDelayMs, undefined, {
+      signal: controller.signal,
+      ref: false,
+    })
+      .then(() => {
+        if (activityEndTimers.get(deviceId) !== controller) return;
+        activityEndTimers.delete(deviceId);
+        const operation = publishQueue.then(() => endLiveActivity(deviceId, token));
+        publishQueue = operation.catch(() => undefined);
+      })
+      .catch((error: unknown) => {
+        if (!(error instanceof Error) || error.name !== "AbortError") {
+          console.error("Live Activity end scheduling failed", { deviceId, error });
+        }
+      });
+  };
 
   const deliver = async (
     target: DeliveryTarget,
@@ -122,36 +187,15 @@ export async function startServer(
       return;
     }
 
-    if (target.activityPushToken && target.preferences.liveActivitiesEnabled) {
-      const result = await apns.sendLiveActivity({
-        token: target.activityPushToken,
-        bundleId: target.bundleId,
-        environment: target.apsEnvironment,
-        aggregate,
-        alert,
-      });
-      if (result.invalidToken) store.clearActivityToken(target.deviceId);
-      if (result.ok && !aggregate?.activeCount) store.clearActivityToken(target.deviceId);
-      if (!result.ok) {
-        console.warn("APNs Live Activity delivery failed", {
-          deviceId: target.deviceId,
-          tokenSuffix: target.activityPushToken.slice(-8),
-          status: result.status,
-          reason: result.reason,
-        });
-        if (!result.invalidToken) return;
-      }
-    } else if (
-      target.pushToken &&
-      shouldNotify({ state, previous: target.lastAggregate, preferences: target.preferences }) &&
-      state
-    ) {
+    let liveActivityAlertPayload = alert;
+    if (alert && target.pushToken && state) {
       const result = await apns.sendNotification({
         token: target.pushToken,
         bundleId: target.bundleId,
         environment: target.apsEnvironment,
         state,
       });
+      if (result.ok) liveActivityAlertPayload = null;
       if (result.invalidToken) store.clearPushToken(target.deviceId);
       if (!result.ok) {
         console.warn("APNs notification delivery failed", {
@@ -160,10 +204,39 @@ export async function startServer(
           status: result.status,
           reason: result.reason,
         });
-        if (!result.invalidToken) return;
       }
     }
-    store.recordAggregate(target.deviceId, aggregate);
+
+    let liveActivityDelivered = true;
+    if (target.activityPushToken && target.preferences.liveActivitiesEnabled) {
+      cancelActivityEnd(target.deviceId);
+      const event = aggregate === null ? "end" : "update";
+      const result = await apns.sendLiveActivity({
+        token: target.activityPushToken,
+        bundleId: target.bundleId,
+        environment: target.apsEnvironment,
+        aggregate,
+        alert: liveActivityAlertPayload,
+        event,
+      });
+      liveActivityDelivered = result.ok || result.invalidToken;
+      if (result.invalidToken || (result.ok && event === "end")) {
+        store.clearActivityToken(target.deviceId);
+      } else if (result.ok && aggregate?.activeCount === 0) {
+        scheduleActivityEnd(target.deviceId, target.activityPushToken);
+      }
+      if (!result.ok) {
+        console.warn("APNs Live Activity delivery failed", {
+          deviceId: target.deviceId,
+          tokenSuffix: target.activityPushToken.slice(-8),
+          status: result.status,
+          reason: result.reason,
+        });
+      }
+    }
+    if (liveActivityDelivered) {
+      store.recordAggregate(target.deviceId, aggregate);
+    }
   };
 
   const server = NodeHttp.createServer(
@@ -260,13 +333,23 @@ export async function startServer(
     server.once("error", reject);
     server.listen(config.port, config.host, resolve);
   });
+  if ((store.aggregate()?.activeCount ?? 0) === 0) {
+    for (const target of store.targets()) {
+      if (target.activityPushToken && target.preferences.liveActivitiesEnabled) {
+        scheduleActivityEnd(target.deviceId, target.activityPushToken);
+      }
+    }
+  }
   const address = server.address() as NodeNet.AddressInfo;
   return {
     url: `http://${address.address}:${address.port}`,
     close: async () => {
+      for (const controller of activityEndTimers.values()) controller.abort();
+      activityEndTimers.clear();
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),
       );
+      await publishQueue;
       store.close();
     },
   };

@@ -48,6 +48,7 @@ export interface LiveActivityInput {
   readonly environment?: ApnsEnvironment | null;
   readonly aggregate: RelayAgentActivityAggregateState | null;
   readonly alert: { readonly title: string; readonly body: string } | null;
+  readonly event: "update" | "end";
 }
 
 export interface ApnsDeliveryClient {
@@ -219,7 +220,6 @@ export function makeLiveActivityRequest(
   now = Date.now(),
 ): ApnsPreparedRequest {
   const timestamp = Math.floor(now / 1_000);
-  const event = input.aggregate?.activeCount ? "update" : "end";
   const contentState = input.aggregate
     ? { "content-state": { name: "AgentActivity", props: JSON.stringify(input.aggregate) } }
     : {};
@@ -227,23 +227,23 @@ export function makeLiveActivityRequest(
     token: input.token,
     topic: `${input.bundleId ?? config.bundleId}.push-type.liveactivity`,
     pushType: "liveactivity",
-    priority: event === "update" && input.alert === null ? "5" : "10",
+    priority: input.event === "update" && input.alert === null ? "5" : "10",
     environment: input.environment ?? config.environment,
     payload: {
       aps:
-        event === "update"
+        input.event === "update"
           ? {
               timestamp,
-              event,
+              event: input.event,
               ...contentState,
               "stale-date": timestamp + 10 * 60,
               ...(input.alert ? { alert: { ...input.alert, sound: "default" } } : {}),
             }
           : {
               timestamp,
-              event,
+              event: input.event,
               ...contentState,
-              "dismissal-date": timestamp + (input.aggregate ? 5 * 60 : 15),
+              "dismissal-date": timestamp,
               ...(input.alert ? { alert: { ...input.alert, sound: "default" } } : {}),
             },
     },

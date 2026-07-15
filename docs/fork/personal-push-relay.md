@@ -88,6 +88,11 @@ contract schemas, the additive server route layer, and the mobile connection bri
 focused tests plus the repository checks after changes to agent-awareness projection or relay
 contracts.
 
+Standard notifications and Live Activity updates are separate deliveries. When agent work reaches
+a terminal state, the relay sends the configured notification and keeps the completed Live Activity
+updateable for five minutes. New work during that grace period reuses the activity; otherwise the
+relay ends it and clears its update token.
+
 ## Verification
 
 ```sh
