@@ -30,6 +30,7 @@ import {
 } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 
+import { CURSOR_APPROVAL_REVIEWER_OPTION } from "../../cursorModelOptions.ts";
 import {
   buildBooleanOptionDescriptor,
   buildSelectOptionDescriptor,
@@ -56,8 +57,8 @@ const CURSOR_PRESENTATION = {
   badgeLabel: "Early Access",
   showInteractionModeToggle: true,
 } as const;
-const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
-  optionDescriptors: [],
+const BASE_CAPABILITIES: ModelCapabilities = createModelCapabilities({
+  optionDescriptors: [CURSOR_APPROVAL_REVIEWER_OPTION],
 });
 
 const CURSOR_ACP_MODEL_DISCOVERY_TIMEOUT_MS = 15_000;
@@ -254,7 +255,7 @@ export function buildCursorCapabilitiesFromConfigOptions(
   configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption> | null | undefined,
 ): ModelCapabilities {
   if (!configOptions || configOptions.length === 0) {
-    return EMPTY_CAPABILITIES;
+    return BASE_CAPABILITIES;
   }
 
   const reasoningConfig = findCursorEffortConfigOption(configOptions);
@@ -306,6 +307,7 @@ export function buildCursorCapabilitiesFromConfigOptions(
   const fastCurrentValue = getBooleanCurrentValue(fastOption);
   const thinkingCurrentValue = getBooleanCurrentValue(thinkingOption);
   const optionDescriptors = [
+    CURSOR_APPROVAL_REVIEWER_OPTION,
     ...(reasoningEffortLevels.length > 0
       ? [
           buildSelectOptionDescriptor({
@@ -575,7 +577,7 @@ export const discoverCursorModelsViaAcp = (
 export function getCursorFallbackModels(
   cursorSettings: Pick<CursorSettings, "customModels">,
 ): ReadonlyArray<ServerProviderModel> {
-  return providerModelsFromSettings([], PROVIDER, cursorSettings.customModels, EMPTY_CAPABILITIES);
+  return providerModelsFromSettings([], PROVIDER, cursorSettings.customModels, BASE_CAPABILITIES);
 }
 
 /** Timeout for `agent about` — it's slower than a simple `--version` probe. */
@@ -639,7 +641,7 @@ export function buildCursorProviderSnapshot(input: {
       input.discoveredModels ?? [],
       PROVIDER,
       input.cursorSettings.customModels,
-      EMPTY_CAPABILITIES,
+      BASE_CAPABILITIES,
     ),
     probe: {
       installed: true,

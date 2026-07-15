@@ -60,6 +60,7 @@ feature.
 | `FORK-PUSH-001`   | Tailnet APNs notification and Live Activity relay | Active               | [`docs/fork/personal-push-relay.md`](docs/fork/personal-push-relay.md)           | `vp test apps/push-relay/src apps/server/src/personalPush apps/server/src/serverSettings.test.ts apps/server/src/relay/AgentAwarenessRelay.test.ts apps/mobile/src/features/agent-awareness/remoteRegistration.test.ts packages/contracts/src/settings.test.ts`                                                                                                                                                                                    |
 | `FORK-CODEX-001`  | Codex MCP tool approval prompts                   | Active, temporary    | [`docs/fork/codex-mcp-tool-approvals.md`](docs/fork/codex-mcp-tool-approvals.md) | `vp test apps/server/src/provider/CodexMcpApproval.test.ts apps/server/src/provider/Layers/CodexAdapter.test.ts apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.test.ts apps/web/src/session-logic.test.ts apps/mobile/src/lib/threadActivity.test.ts`                                                                                                                                                                               |
 | `FORK-CODEX-002`  | Codex automatic approval reviewer                 | Active, temporary    | [`docs/fork/codex-auto-review.md`](docs/fork/codex-auto-review.md)               | `vp test apps/server/src/codexModelOptions.test.ts apps/server/src/provider/Layers/CodexProvider.test.ts apps/server/src/provider/Layers/CodexAdapter.test.ts apps/server/src/provider/Layers/CodexSessionRuntime.test.ts`                                                                                                                                                                                                                         |
+| `FORK-CURSOR-001` | Cursor automatic approval reviewer                | Active, temporary    | [`docs/fork/cursor-auto-review.md`](docs/fork/cursor-auto-review.md)             | `vp test apps/server/src/cursorModelOptions.test.ts apps/server/src/provider/acp/CursorAcpSupport.test.ts apps/server/src/provider/Layers/CursorProvider.test.ts apps/server/src/provider/Layers/CursorAdapter.test.ts apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts`                                                                                                                                                        |
 
 ### FORK-CODEX-001 ownership map
 
@@ -87,6 +88,28 @@ Remove this feature when upstream T3 handles Codex `mcpServer/elicitation/reques
 with `codex_approval_kind: "mcp_tool_call"`, including session-persistence metadata and web/mobile
 approval rendering. Preserve the immediate cancel response for unsupported structured or URL
 elicitations unless upstream adds a complete input flow for them.
+
+### FORK-CURSOR-001 ownership map
+
+Fork-owned paths:
+
+- `apps/server/src/cursorModelOptions.ts`
+- `docs/fork/cursor-auto-review.md`
+
+Shared upstream touchpoints containing the Auto-review option and ACP launch behavior:
+
+- `apps/server/src/provider/Layers/CursorProvider.ts`
+- `apps/server/src/provider/Layers/CursorAdapter.ts`
+- `apps/server/src/provider/acp/CursorAcpSupport.ts`
+- `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts`
+- focused tests for those modules
+
+The setting is a Cursor model option so the existing provider-specific controls render it on web
+and mobile without widening shared runtime modes. Preserve the `user` default, launch ACP with
+`--auto-review` only when selected, restart and resume active Cursor sessions when the reviewer
+changes, and keep escalated approvals interactive even under T3's full-access runtime mode. Remove
+this feature when upstream T3 exposes Cursor Auto-review with equivalent per-thread persistence and
+web/mobile controls.
 
 ### FORK-CODEX-002 ownership map
 
