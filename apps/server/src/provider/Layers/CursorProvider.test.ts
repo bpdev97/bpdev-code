@@ -62,6 +62,18 @@ function booleanDescriptor(id: string, label: string, currentValue?: boolean) {
   };
 }
 
+const approvalReviewerDescriptor = {
+  id: "approvalsReviewer",
+  label: "Approval reviewer",
+  description: "Choose whether you or Cursor reviews tool calls before they run.",
+  type: "select" as const,
+  options: [
+    { id: "user", label: "Ask me", isDefault: true },
+    { id: "auto_review", label: "Auto-review" },
+  ],
+  currentValue: "user",
+};
+
 const makeMockAgentWrapper = Effect.fn("makeMockAgentWrapper")(function* (
   extraEnv?: Record<string, string>,
 ) {
@@ -313,11 +325,14 @@ const cursorCliCommandMissingMessage = [
 
 describe("getCursorFallbackModels", () => {
   it("does not publish any built-in cursor models before ACP discovery", () => {
-    expect(
-      getCursorFallbackModels({
-        customModels: ["internal/cursor-model"],
-      }).map((model) => model.slug),
-    ).toEqual(["internal/cursor-model"]);
+    const models = getCursorFallbackModels({
+      customModels: ["internal/cursor-model"],
+    });
+
+    expect(models.map((model) => model.slug)).toEqual(["internal/cursor-model"]);
+    expect(models[0]?.capabilities).toEqual(
+      createModelCapabilities({ optionDescriptors: [approvalReviewerDescriptor] }),
+    );
   });
 });
 
@@ -375,6 +390,7 @@ describe("buildCursorCapabilitiesFromConfigOptions", () => {
     expect(buildCursorCapabilitiesFromConfigOptions(parameterizedGpt54ConfigOptions)).toEqual(
       createModelCapabilities({
         optionDescriptors: [
+          approvalReviewerDescriptor,
           selectDescriptor("reasoning", "Reasoning", [
             { id: "low", label: "Low" },
             { id: "medium", label: "Medium", isDefault: true },
@@ -395,6 +411,7 @@ describe("buildCursorCapabilitiesFromConfigOptions", () => {
     expect(buildCursorCapabilitiesFromConfigOptions(parameterizedClaudeConfigOptions)).toEqual(
       createModelCapabilities({
         optionDescriptors: [
+          approvalReviewerDescriptor,
           selectDescriptor("reasoning", "Reasoning", [
             { id: "low", label: "Low" },
             { id: "medium", label: "Medium" },
@@ -412,6 +429,7 @@ describe("buildCursorCapabilitiesFromConfigOptions", () => {
     ).toEqual(
       createModelCapabilities({
         optionDescriptors: [
+          approvalReviewerDescriptor,
           selectDescriptor("reasoning", "Effort", [
             { id: "low", label: "Low" },
             { id: "medium", label: "Medium" },

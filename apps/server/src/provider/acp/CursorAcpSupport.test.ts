@@ -74,6 +74,20 @@ describe("buildCursorAcpSpawnInput", () => {
       cwd: "/tmp/project",
     });
   });
+
+  it("enables Cursor Auto-review before starting ACP", () => {
+    expect(
+      buildCursorAcpSpawnInput(undefined, "/tmp/project", {
+        autoReview: true,
+        environment: { CURSOR_API_KEY: "test-key" },
+      }),
+    ).toEqual({
+      command: "agent",
+      args: ["--auto-review", "acp"],
+      cwd: "/tmp/project",
+      env: { CURSOR_API_KEY: "test-key" },
+    });
+  });
 });
 
 describe("applyCursorAcpModelSelection", () => {

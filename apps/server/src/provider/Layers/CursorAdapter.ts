@@ -42,6 +42,7 @@ import type * as EffectAcpSchema from "effect-acp/schema";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
+import { getCursorApprovalsReviewerOptionValue } from "../../cursorModelOptions.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import {
   ProviderAdapterProcessError,
@@ -498,6 +499,8 @@ export function makeCursorAdapter(
           const cwd = path.resolve(input.cwd.trim());
           const cursorModelSelection =
             input.modelSelection?.instanceId === boundInstanceId ? input.modelSelection : undefined;
+          const autoReviewEnabled =
+            getCursorApprovalsReviewerOptionValue(cursorModelSelection) === "auto_review";
           const existing = sessions.get(input.threadId);
           if (existing && !existing.stopped) {
             yield* stopSessionInternal(existing);
@@ -534,6 +537,7 @@ export function makeCursorAdapter(
           const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
           const acp = yield* makeCursorAcpRuntime({
             cursorSettings: effectiveCursorSettings,
+            autoReview: autoReviewEnabled,
             ...(options?.environment ? { environment: options.environment } : {}),
             childProcessSpawner,
             cwd,
@@ -671,7 +675,7 @@ export function makeCursorAdapter(
                     params,
                     "acp.jsonrpc",
                   );
-                  if (input.runtimeMode === "full-access") {
+                  if (input.runtimeMode === "full-access" && !autoReviewEnabled) {
                     const autoApprovedOptionId = selectAutoApprovedPermissionOption(params);
                     if (autoApprovedOptionId !== undefined) {
                       return {

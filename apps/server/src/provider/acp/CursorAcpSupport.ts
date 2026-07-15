@@ -20,6 +20,12 @@ export interface CursorAcpRuntimeInput extends Omit<
 > {
   readonly childProcessSpawner: ChildProcessSpawner.ChildProcessSpawner["Service"];
   readonly cursorSettings: CursorAcpRuntimeCursorSettings | null | undefined;
+  readonly autoReview?: boolean;
+  readonly environment?: NodeJS.ProcessEnv;
+}
+
+interface CursorAcpSpawnOptions {
+  readonly autoReview?: boolean;
   readonly environment?: NodeJS.ProcessEnv;
 }
 
@@ -32,16 +38,17 @@ export interface CursorAcpModelSelectionErrorContext {
 export function buildCursorAcpSpawnInput(
   cursorSettings: CursorAcpRuntimeCursorSettings | null | undefined,
   cwd: string,
-  environment?: NodeJS.ProcessEnv,
+  options?: CursorAcpSpawnOptions,
 ): AcpSessionRuntime.AcpSpawnInput {
   return {
     command: cursorSettings?.binaryPath || "agent",
     args: [
       ...(cursorSettings?.apiEndpoint ? (["-e", cursorSettings.apiEndpoint] as const) : []),
+      ...(options?.autoReview ? (["--auto-review"] as const) : []),
       "acp",
     ],
     cwd,
-    ...(environment ? { env: environment } : {}),
+    ...(options?.environment ? { env: options.environment } : {}),
   };
 }
 
@@ -56,7 +63,10 @@ export const makeCursorAcpRuntime = (
     const acpContext = yield* Layer.build(
       AcpSessionRuntime.layer({
         ...input,
-        spawn: buildCursorAcpSpawnInput(input.cursorSettings, input.cwd, input.environment),
+        spawn: buildCursorAcpSpawnInput(input.cursorSettings, input.cwd, {
+          ...(input.autoReview ? { autoReview: true } : {}),
+          ...(input.environment ? { environment: input.environment } : {}),
+        }),
         authMethodId: "cursor_login",
         clientCapabilities: CURSOR_PARAMETERIZED_MODEL_PICKER_CAPABILITIES,
       }).pipe(

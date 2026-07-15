@@ -31,6 +31,7 @@ import {
 } from "@t3tools/shared/genericChat";
 
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
+import { getCursorApprovalsReviewerOptionValue } from "../../cursorModelOptions.ts";
 import { increment, orchestrationEventsProcessedTotal } from "../../observability/Metrics.ts";
 import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
 import type { ProviderServiceError } from "../../provider/Errors.ts";
@@ -568,10 +569,16 @@ const make = Effect.gen(function* () {
         activeSession?.providerInstanceId !== requestedModelSelection.instanceId;
       const shouldRestartForModelChange = modelChanged && sessionModelSwitch === "unsupported";
       const previousModelSelection = threadModelSelections.get(threadId);
-      const shouldRestartForModelSelectionChange =
-        preferredProvider === "claudeAgent" &&
+      const cursorApprovalReviewerChanged =
+        preferredProvider === "cursor" &&
         requestedModelSelection !== undefined &&
-        !Equal.equals(previousModelSelection, requestedModelSelection);
+        getCursorApprovalsReviewerOptionValue(previousModelSelection) !==
+          getCursorApprovalsReviewerOptionValue(requestedModelSelection);
+      const shouldRestartForModelSelectionChange =
+        (preferredProvider === "claudeAgent" &&
+          requestedModelSelection !== undefined &&
+          !Equal.equals(previousModelSelection, requestedModelSelection)) ||
+        cursorApprovalReviewerChanged;
 
       if (
         !runtimeModeChanged &&
