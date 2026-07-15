@@ -135,6 +135,13 @@ interface ClaudeTurnState {
   readonly assistantTextBlockOrder: Array<AssistantTextBlockState>;
   readonly capturedProposedPlanKeys: Set<string>;
   nextSyntheticAssistantBlockIndex: number;
+  /**
+   * Claude emits `session_state_changed: idle` only after task-backed work
+   * (including subagents) has actually settled. Once a task lifecycle starts,
+   * hold the SDK result until that authoritative idle signal arrives.
+   */
+  awaitsTaskIdle: boolean;
+  pendingResult?: SDKResultMessage;
 }
 
 interface AssistantTextBlockState {
@@ -1261,6 +1268,13 @@ function sdkNativeMethod(message: SDKMessage): string {
   }
 
   return `claude/${message.type}`;
+}
+
+function isNestedClaudeConversationMessage(message: SDKMessage): boolean {
+  if (message.type !== "assistant" && message.type !== "user" && message.type !== "stream_event") {
+    return false;
+  }
+  return message.parent_tool_use_id !== null && message.parent_tool_use_id !== undefined;
 }
 
 // Discriminator/identity keys carry no human-readable content; everything else
@@ -2477,6 +2491,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         assistantTextBlockOrder: [],
         capturedProposedPlanKeys: new Set(),
         nextSyntheticAssistantBlockIndex: -1,
+        awaitsTaskIdle: false,
       };
       context.session = {
         ...context.session,
@@ -2543,14 +2558,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     yield* updateResumeCursor(context);
   });
 
-  const handleResultMessage = Effect.fn("handleResultMessage")(function* (
+  const completeResultMessage = Effect.fn("completeResultMessage")(function* (
     context: ClaudeSessionContext,
-    message: SDKMessage,
+    message: SDKResultMessage,
   ) {
-    if (message.type !== "result") {
-      return;
-    }
-
     const status = turnStatusFromResult(message);
     const errorMessage = message.subtype === "success" ? undefined : message.errors[0];
 
@@ -2559,6 +2570,22 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
 
     yield* completeTurn(context, status, errorMessage, message);
+  });
+
+  const handleResultMessage = Effect.fn("handleResultMessage")(function* (
+    context: ClaudeSessionContext,
+    message: SDKMessage,
+  ) {
+    if (message.type !== "result") {
+      return;
+    }
+
+    if (context.turnState?.awaitsTaskIdle) {
+      context.turnState.pendingResult = message;
+      return;
+    }
+
+    yield* completeResultMessage(context, message);
   });
 
   const handleSystemMessage = Effect.fn("handleSystemMessage")(function* (
@@ -2666,6 +2693,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         });
         return;
       case "task_started":
+        if (context.turnState) {
+          context.turnState.awaitsTaskIdle = true;
+        }
         yield* offerRuntimeEvent({
           ...base,
           type: "task.started",
@@ -2675,6 +2705,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
             ...(message.task_type ? { taskType: message.task_type } : {}),
           },
         });
+        return;
+      case "task_updated":
+        // `task_progress` and `task_notification` carry the displayable and
+        // terminal task state. The patch event is bookkeeping for SDK hosts.
         return;
       case "task_progress":
         yield* emitThreadTokenUsage(
@@ -2717,6 +2751,28 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           },
         });
         return;
+      case "session_state_changed": {
+        if (message.state === "idle") {
+          const turnState = context.turnState;
+          const pendingResult = turnState?.pendingResult;
+          if (pendingResult) {
+            delete turnState.pendingResult;
+            yield* completeResultMessage(context, pendingResult);
+          }
+          return;
+        }
+
+        yield* offerRuntimeEvent({
+          ...base,
+          type: "session.state.changed",
+          payload: {
+            state: message.state === "requires_action" ? "waiting" : "running",
+            reason: `session_state:${message.state}`,
+            detail: message,
+          },
+        });
+        return;
+      }
       case "files_persisted":
         yield* offerRuntimeEvent({
           ...base,
@@ -2851,6 +2907,14 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   ) {
     yield* logNativeSdkMessage(context, message);
     yield* ensureThreadId(context, message);
+
+    // Subagent messages have an independent content-block index namespace.
+    // Folding them into the top-level turn lets a child block at index 0
+    // overwrite the parent Task tool at index 0. Task lifecycle messages above
+    // provide the flattened progress UI until nested transcripts are modeled.
+    if (isNestedClaudeConversationMessage(message)) {
+      return;
+    }
 
     switch (message.type) {
       case "stream_event":
@@ -3697,6 +3761,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         assistantTextBlockOrder: [],
         capturedProposedPlanKeys: new Set(),
         nextSyntheticAssistantBlockIndex: -1,
+        awaitsTaskIdle: false,
       };
 
       const updatedAt = yield* nowIso;
