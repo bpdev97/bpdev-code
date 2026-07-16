@@ -276,6 +276,7 @@ successful end-to-end chat.
 | 2026-07-13 | `f61fa949`   | `c1ec1915`   | Hermes Agent 0.18.2 (`4281151`) source / ACP SDK 0.9.0 | No Hermes touchpoints changed; mobile conflicts preserved generic-chat guards and personal app identity.                                         |
 | 2026-07-14 | `c1ec1915`   | `735240f3`   | Hermes Agent 0.18.2 (`4281151`) source / ACP SDK 0.9.0 | No Hermes touchpoints changed; the additive shared favicon export preserved generic-chat package exports.                                        |
 | 2026-07-15 | `735240f3`   | `ecb35f75`   | Hermes Agent 0.18.2 (`4281151`) source / ACP SDK 0.9.0 | Upstream added mobile legal routes and Android beta assets; the config conflict preserved personal identity while adopting the new asset layout. |
+| 2026-07-16 | `ecb35f75`   | `fdca1547`   | Hermes Agent 0.18.2 (`4281151`) source / ACP SDK 0.9.0 | No Hermes provider interfaces changed; mobile conflicts combined share-target flows with generic-chat guards and personal app identity.          |
 
 Remove `FORK-HERMES-001` only when upstream T3 ships equivalent profile-aware Hermes ACP support and
 existing versioned cursors can be migrated or continued without losing sessions. Compare behavior
