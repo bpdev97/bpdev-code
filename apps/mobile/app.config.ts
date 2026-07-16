@@ -53,6 +53,7 @@ const VARIANT_CONFIG = {
     scheme: personalMobile.developmentScheme,
     iosBundleIdentifier: `${personalMobile.iosBundleIdentifier}.dev`,
     androidPackage: "com.t3tools.t3code.dev",
+    relyingParty: "clerk.t3.codes",
     assets: DEVELOPMENT_ASSETS,
   },
   preview: {
@@ -60,6 +61,7 @@ const VARIANT_CONFIG = {
     scheme: personalMobile.previewScheme,
     iosBundleIdentifier: `${personalMobile.iosBundleIdentifier}.preview`,
     androidPackage: "com.t3tools.t3code.preview",
+    relyingParty: "clerk.t3.codes",
     assets: RELEASE_ASSETS,
   },
   production: {
@@ -67,6 +69,7 @@ const VARIANT_CONFIG = {
     scheme: personalMobile.scheme,
     iosBundleIdentifier: personalMobile.iosBundleIdentifier,
     androidPackage: "com.t3tools.t3code",
+    relyingParty: "clerk.t3.codes",
     assets: RELEASE_ASSETS,
   },
 } as const;
@@ -83,6 +86,9 @@ function resolveAppVariant(value: string | undefined): AppVariant {
 }
 
 const variant = VARIANT_CONFIG[APP_VARIANT];
+const iosBundleIdentifier = isIosPersonalTeamBuild
+  ? personalTeamBundleIdentifier!
+  : variant.iosBundleIdentifier;
 
 const dmSansFonts = {
   regular: "@expo-google-fonts/dm-sans/400Regular/DMSans_400Regular.ttf",
@@ -93,8 +99,8 @@ const dmSansFonts = {
 const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
   "expo-widgets",
   {
-    bundleIdentifier: `${variant.iosBundleIdentifier}.widgets`,
-    groupIdentifier: `group.${variant.iosBundleIdentifier}`,
+    bundleIdentifier: `${iosBundleIdentifier}.widgets`,
+    groupIdentifier: `group.${iosBundleIdentifier}`,
     enablePushNotifications: true,
     // Agent activity can update many times an hour; without the
     // frequent-updates entitlement iOS throttles the update budget sooner.
@@ -107,6 +113,30 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
         supportedFamilies: ["systemSmall", "systemMedium", "accessoryRectangular"],
       },
     ],
+  },
+];
+
+const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
+  "expo-sharing",
+  {
+    ios: {
+      // Personal Teams cannot sign App Groups or extension targets. Keep the
+      // reduced-capability local build usable while release builds expose the
+      // real system share target.
+      enabled: !isIosPersonalTeamBuild,
+      extensionBundleIdentifier: `${iosBundleIdentifier}.sharing`,
+      appGroupId: `group.${iosBundleIdentifier}`,
+      activationRule: {
+        supportsText: true,
+        supportsWebUrlWithMaxCount: 1,
+        supportsImageWithMaxCount: 8,
+      },
+    },
+    android: {
+      enabled: true,
+      singleShareMimeTypes: ["text/plain", "image/*"],
+      multipleShareMimeTypes: ["image/*"],
+    },
   },
 ];
 
@@ -139,8 +169,12 @@ const config: ExpoConfig = {
   ios: {
     icon: variant.assets.iosIcon,
     supportsTablet: true,
-    bundleIdentifier: variant.iosBundleIdentifier,
+    bundleIdentifier: iosBundleIdentifier,
     appleTeamId: personalMobile.appleTeamId,
+    associatedDomains: [
+      `applinks:${variant.relyingParty}`,
+      `webcredentials:${variant.relyingParty}`,
+    ],
     infoPlist: {
       NSAppTransportSecurity: {
         NSAllowsArbitraryLoads: true,
@@ -194,6 +228,9 @@ const config: ExpoConfig = {
     ],
     "expo-secure-store",
     "expo-sqlite",
+    ...(isIosPersonalTeamBuild
+      ? [sharingPlugin]
+      : ["./plugins/withShareExtensionDisplayName.cjs", sharingPlugin]),
     [
       "expo-notifications",
       {
