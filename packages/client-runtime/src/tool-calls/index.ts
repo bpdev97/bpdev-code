@@ -42,6 +42,7 @@ export type ToolCallDetailSection =
       readonly kind: "text";
       readonly title: string;
       readonly content: string;
+      readonly format?: "plain" | "markdown";
       readonly truncated?: boolean;
     }
   | {
@@ -295,6 +296,21 @@ function categoryFromInput(input: {
   readonly toolName: string | null;
   readonly hasUrl: boolean;
 }): ToolCallCategory {
+  switch (input.kind?.toLowerCase()) {
+    case "execute":
+      return "command";
+    case "edit":
+    case "delete":
+    case "move":
+    case "write":
+      return "file-change";
+    case "read":
+      return "read";
+    case "search":
+      return "search";
+    case "fetch":
+      return "web";
+  }
   if (input.itemType === "command_execution") return "command";
   if (input.itemType === "file_change") return "file-change";
   if (input.itemType === "mcp_tool_call") return "mcp";
@@ -503,6 +519,7 @@ function appendTextSection(
   title: string,
   value: string | null,
   language?: "shell" | "text" | "diff",
+  format?: "plain" | "markdown",
 ): void {
   if (!value) return;
   const limited = limitText(value);
@@ -528,9 +545,27 @@ function appendTextSection(
       kind,
       title,
       content: limited.text,
+      ...(format ? { format } : {}),
       ...(limited.truncated ? { truncated: true } : {}),
     });
   }
+}
+
+function providerTitleDetail(
+  providerTitle: string | null,
+  category: ToolCallCategory,
+): string | null {
+  if (!providerTitle) return null;
+  const separator = providerTitle.indexOf(":");
+  if (separator < 0) return null;
+  const prefix = providerTitle.slice(0, separator).trim().toLowerCase();
+  const detail = providerTitle.slice(separator + 1).trim();
+  if (!detail || detail === "?") return null;
+  if (category === "search" && ["search", "find", "grep"].includes(prefix)) return detail;
+  if (category === "web" && ["web search", "extract", "navigate"].includes(prefix)) {
+    return detail;
+  }
+  return null;
 }
 
 function sectionCopyText(section: ToolCallDetailSection): string {
@@ -630,6 +665,7 @@ export function deriveToolCallPresentation(
     item.callId,
   );
   const server = firstString(item.server, data.server);
+  const providerTitle = firstString(item.providerTitle, data.providerTitle);
   const toolName = firstString(item.tool, data.tool, data.toolName, payload.toolName);
   const baseTitle = normalizeTitle(
     firstString(
@@ -669,6 +705,8 @@ export function deriveToolCallPresentation(
     collectSearchQueries(itemInput, searchQueries);
     collectSearchQueries(data, searchQueries);
     collectSearchQueries(rawInput, searchQueries);
+    const titleQuery = providerTitleDetail(providerTitle, category);
+    if (titleQuery) searchQueries.set(titleQuery.toLowerCase(), titleQuery);
   }
   const command =
     input.command ??
@@ -738,7 +776,7 @@ export function deriveToolCallPresentation(
   }
   appendTextSection(sections, "code", "Output", output, "text");
   if (contentOutput && contentOutput !== output) {
-    appendTextSection(sections, "text", "Tool output", contentOutput);
+    appendTextSection(sections, "text", "Tool output", contentOutput, undefined, "markdown");
   }
   appendTextSection(sections, "code", "Error output", stderr, "text");
 

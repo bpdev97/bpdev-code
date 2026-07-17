@@ -54,4 +54,22 @@ describe("toolActivity", () => {
       summary: "Read file",
     });
   });
+
+  it("distinguishes ACP file searches from web fetches", () => {
+    expect(
+      deriveToolActivityPresentation({
+        itemType: "web_search",
+        title: "search: tool calls",
+        data: { kind: "search" },
+      }),
+    ).toEqual({ summary: "Searched files" });
+
+    expect(
+      deriveToolActivityPresentation({
+        itemType: "web_search",
+        title: "web search: ACP tool calls",
+        data: { kind: "fetch" },
+      }),
+    ).toEqual({ summary: "Searched web" });
+  });
 });

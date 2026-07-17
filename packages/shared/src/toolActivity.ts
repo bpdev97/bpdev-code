@@ -158,7 +158,7 @@ function classifyToolAction(input: {
   readonly itemType?: ToolLifecycleItemType | null | undefined;
   readonly title?: string | undefined;
   readonly data?: Record<string, unknown> | undefined;
-}): "command" | "read" | "file_change" | "search" | "other" {
+}): "command" | "read" | "file_change" | "file_search" | "web_search" | "other" {
   const itemType = input.itemType ?? undefined;
   const kind = asTrimmedString(input.data?.kind)?.toLowerCase();
   const title = asTrimmedString(input.title)?.toLowerCase();
@@ -177,8 +177,11 @@ function classifyToolAction(input: {
   ) {
     return "file_change";
   }
-  if (itemType === "web_search" || kind === "search" || title === "find" || title === "grep") {
-    return "search";
+  if (kind === "search" || title === "find" || title === "grep") {
+    return "file_search";
+  }
+  if (kind === "fetch" || itemType === "web_search") {
+    return "web_search";
   }
   return "other";
 }
@@ -237,13 +240,13 @@ export function deriveToolActivityPresentation(
     };
   }
 
-  if (action === "search") {
+  if (action === "file_search" || action === "web_search") {
     const query =
       asTrimmedString(asRecord(data?.rawInput)?.query) ??
       asTrimmedString(asRecord(data?.rawInput)?.pattern) ??
       asTrimmedString(asRecord(data?.rawInput)?.searchTerm);
     return {
-      summary: "Searched files",
+      summary: action === "file_search" ? "Searched files" : "Searched web",
       ...(query ? { detail: query } : {}),
     };
   }
