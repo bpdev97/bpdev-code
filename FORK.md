@@ -24,9 +24,11 @@ These are the main files to check when an upstream merge conflicts with the fork
 
 | File                                         | What it controls                         |
 | -------------------------------------------- | ---------------------------------------- |
+| `downstream/config.ts`                       | Canonical personal distribution identity |
 | `apps/mobile/app.config.ts`                  | Expo project and iOS app identity        |
 | `apps/mobile/eas.json`                       | Personal iOS build and update channel    |
 | `scripts/build-desktop-artifact.ts`          | macOS packaging identity                 |
+| `apps/desktop/scripts/electron-launcher.mjs` | macOS development bundle identity        |
 | `apps/desktop/src/app/DesktopEnvironment.ts` | Desktop name and local storage locations |
 
 The fork's workflows start with `personal-`. The upstream release workflows are left alone to keep
@@ -61,6 +63,7 @@ feature.
 | `FORK-PUSH-001`   | Tailnet APNs notification and Live Activity relay | Active               | [`docs/fork/personal-push-relay.md`](docs/fork/personal-push-relay.md)             | `vp test apps/push-relay/src apps/server/src/personalPush apps/server/src/serverSettings.test.ts apps/server/src/relay/AgentAwarenessRelay.test.ts apps/mobile/src/features/agent-awareness/remoteRegistration.test.ts packages/contracts/src/settings.test.ts`                                                                                                                                                                                    |
 | `FORK-CODEX-001`  | Codex MCP tool approval prompts                   | Active, temporary    | [`docs/fork/codex-mcp-tool-approvals.md`](docs/fork/codex-mcp-tool-approvals.md)   | `vp test apps/server/src/provider/CodexMcpApproval.test.ts apps/server/src/provider/Layers/CodexAdapter.test.ts apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.test.ts apps/web/src/session-logic.test.ts apps/mobile/src/lib/threadActivity.test.ts`                                                                                                                                                                               |
 | `FORK-CODEX-002`  | Codex automatic approval reviewer                 | Active, temporary    | [`docs/fork/codex-auto-review.md`](docs/fork/codex-auto-review.md)                 | `vp test apps/server/src/codexModelOptions.test.ts apps/server/src/provider/Layers/CodexProvider.test.ts apps/server/src/provider/Layers/CodexAdapter.test.ts apps/server/src/provider/Layers/CodexSessionRuntime.test.ts`                                                                                                                                                                                                                         |
+| `FORK-CURSOR-001` | Cursor ACP protocol compatibility                 | Active, temporary    | [`docs/fork/cursor-acp-protocol.md`](docs/fork/cursor-acp-protocol.md)             | `vp test apps/server/src/provider/Layers/CursorAdapter.test.ts apps/server/src/provider/acp/AcpAdapterSupport.test.ts apps/server/src/provider/acp/AcpJsonRpcConnection.test.ts apps/server/src/provider/acp/AcpRuntimeModel.test.ts apps/server/src/provider/acp/CursorAcpExtension.test.ts`                                                                                                                                                      |
 | `FORK-TOOLS-001`  | Structured tool-call presentation                 | Active               | [`docs/fork/tool-call-presentation.md`](docs/fork/tool-call-presentation.md)       | `vp test packages/client-runtime/src/tool-calls/index.test.ts apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.test.ts apps/web/src/session-logic.test.ts apps/web/src/components/chat/MessagesTimeline.logic.test.ts apps/web/src/components/chat/MessagesTimeline.test.tsx apps/mobile/src/lib/threadActivity.test.ts apps/mobile/src/features/threads/threadFeedLayout.test.ts`                                                    |
 
 ### FORK-CLAUDE-001 ownership map
@@ -75,10 +78,11 @@ Shared upstream touchpoints containing the Claude subagent lifecycle fix:
 - `apps/server/src/provider/Layers/ClaudeAdapter.test.ts`
 
 Preserve isolation of nested Claude conversation messages from the parent turn's content-block
-index namespace. Once a Claude task lifecycle starts, preserve the pending result until the SDK's
-authoritative `session_state_changed: idle` signal arrives, and keep `task_updated` as internal
-bookkeeping rather than a runtime warning. Remove this patch when upstream provides equivalent
-nested-message isolation and task-aware completion behavior.
+index namespace. Once a Claude task lifecycle starts, prefer the SDK's authoritative
+`session_state_changed: idle` signal. If that event is lost, recover only after every observed task
+is terminal; fail explicitly rather than hanging forever if a task remains active past the hard
+timeout. Keep `task_updated` as internal bookkeeping rather than a runtime warning. Remove this
+patch when upstream provides equivalent nested-message isolation and bounded task-aware completion.
 
 ### FORK-CODEX-001 ownership map
 
@@ -122,10 +126,38 @@ mobile without widening the shared runtime modes. Preserve the `user` default an
 reviewer on thread start, resume, and subsequent turns. Remove this feature when upstream T3 exposes
 Codex `approvalsReviewer` with equivalent per-thread persistence and web/mobile controls.
 
+### FORK-CURSOR-001 ownership map
+
+Fork-owned paths:
+
+- `docs/fork/cursor-acp-protocol.md`
+
+Shared upstream touchpoints containing Cursor protocol compatibility behavior:
+
+- `README.md`
+- `apps/server/scripts/acp-mock-agent.ts`
+- `apps/server/src/provider/Layers/CursorAdapter.ts`
+- `apps/server/src/provider/Layers/CursorAdapter.test.ts`
+- `apps/server/src/provider/acp/AcpAdapterSupport.ts`
+- `apps/server/src/provider/acp/AcpAdapterSupport.test.ts`
+- `apps/server/src/provider/acp/AcpCoreRuntimeEvents.ts`
+- `apps/server/src/provider/acp/AcpJsonRpcConnection.test.ts`
+- `apps/server/src/provider/acp/AcpRuntimeModel.ts`
+- `apps/server/src/provider/acp/AcpRuntimeModel.test.ts`
+- `apps/server/src/provider/acp/AcpSessionRuntime.ts`
+- `apps/server/src/provider/acp/CursorAcpExtension.ts`
+- `apps/server/src/provider/acp/CursorAcpExtension.test.ts`
+
+Keep Cursor-specific extension decoding at the adapter boundary while preserving generic ACP
+behavior for other providers. Remove this feature only when upstream handles the same Cursor CLI
+authentication command, mode/model configuration, interactive extension requests, task/todo/plan
+events, and session lifecycle without weakening the shared ACP protocol implementation.
+
 ### FORK-TOOLS-001 ownership map
 
 Fork-owned paths:
 
+- `packages/shared/src/toolActivity.ts`
 - `packages/client-runtime/src/tool-calls/`
 - `docs/fork/tool-call-presentation.md`
 
@@ -146,9 +178,10 @@ Shared upstream touchpoints containing the additive projection and platform rend
 
 Keep provider payload decoding and lifecycle merging in `@t3tools/client-runtime/tool-calls`; web and
 mobile should remain thin renderers over the same presentation model. Preserve stable item IDs and
-untruncated provider data in orchestration activities, while bounding only the rendered sections.
-Remove this patch when upstream provides equivalent cross-provider lifecycle correlation and
-structured, responsive detail views on both clients.
+use the shared payload budget before orchestration persistence, retaining explicit truncation
+metadata and useful leading/trailing diagnostics. Client traversal and rendering must remain bounded
+even for legacy unbounded rows. Remove this patch when upstream provides equivalent cross-provider
+lifecycle correlation and structured, responsive detail views on both clients.
 
 ### FORK-PUSH-001 ownership map
 
@@ -181,6 +214,8 @@ Shared upstream touchpoints containing additive personal-relay behavior:
 
 The personal relay runs alongside the hosted relay path. Its URL and password are server-owned
 settings; the password must remain in `ServerSecretStore` and be redacted from settings snapshots.
+Keep notification and Live Activity delivery watermarks independent and advance each only after APNs
+accepts that channel so transient failures remain retryable without duplicating successful sends.
 During upstream syncs, preserve the
 canonical awareness projection and its confirmation/deduplication worker, then reapply personal
 publishing as a second sink. Review mobile registration changes for new token APIs or authentication
@@ -307,6 +342,7 @@ successful end-to-end chat.
 | 2026-07-15 | `735240f3`   | `ecb35f75`   | Hermes Agent 0.18.2 (`4281151`) source / ACP SDK 0.9.0 | Upstream added mobile legal routes and Android beta assets; the config conflict preserved personal identity while adopting the new asset layout.                                                                                                                                                                                        |
 | 2026-07-16 | `ecb35f75`   | `fdca1547`   | Hermes Agent 0.18.2 (`4281151`) source / ACP SDK 0.9.0 | No Hermes provider interfaces changed; mobile conflicts combined share-target flows with generic-chat guards and personal app identity.                                                                                                                                                                                                 |
 | 2026-07-17 | `8b546986`   | `24f9c2a0`   | Hermes Agent 0.18.2 (`4281151`) source / ACP SDK 0.9.0 | Upstream centralized brand assets and added restart-safe ACP assistant IDs; conflicts retained personal identity and combined the runtime UUID with Hermes message boundaries. Codex developer-instruction changes were merged with the fork's approval reviewer. No fork feature had an upstream-equivalent end-to-end implementation. |
+| 2026-07-17 | `24f9c2a0`   | `5ca32661`   | Hermes Agent 0.18.2 (`4281151`) source / ACP SDK 0.9.0 | No Hermes touchpoints changed. Upstream's higher-contrast question descriptions were adopted unchanged; its macOS development launcher identity work was adapted to the canonical personal distribution identity.                                                                                                                       |
 
 Remove `FORK-HERMES-001` only when upstream T3 ships equivalent profile-aware Hermes ACP support and
 existing versioned cursors can be migrated or continued without losing sessions. Compare behavior
