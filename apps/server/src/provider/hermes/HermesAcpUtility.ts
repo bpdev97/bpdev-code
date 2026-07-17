@@ -1,4 +1,5 @@
 import type { HermesSettings } from "@t3tools/contracts";
+import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -47,8 +48,9 @@ export const makeHermesAcpUtility = Effect.fn("makeHermesAcpUtility")(function* 
 ): Effect.fn.Return<
   HermesAcpUtility,
   never,
-  ChildProcessSpawner.ChildProcessSpawner | Scope.Scope
+  ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto | Scope.Scope
 > {
+  const crypto = yield* Crypto.Crypto;
   const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const parentScope = yield* Scope.Scope;
   const serialization = yield* Semaphore.make(1);
@@ -68,7 +70,10 @@ export const makeHermesAcpUtility = Effect.fn("makeHermesAcpUtility")(function* 
       childProcessSpawner,
       cwd: process.cwd(),
       clientInfo: { name: "t3-code-hermes-utility", version: "0.0.0" },
-    }).pipe(Effect.provideService(Scope.Scope, scope));
+    }).pipe(
+      Effect.provideService(Crypto.Crypto, crypto),
+      Effect.provideService(Scope.Scope, scope),
+    );
 
     yield* Stream.runForEach(runtime.getEvents(), (event) => {
       if (event._tag === "EventStreamBarrier") {
