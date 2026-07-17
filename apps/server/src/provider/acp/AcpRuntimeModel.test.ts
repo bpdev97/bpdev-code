@@ -187,6 +187,7 @@ describe("AcpRuntimeModel", () => {
           detail: "bun run typecheck",
           data: {
             toolCallId: "tool-1",
+            providerTitle: "Terminal",
             kind: "execute",
             command: "bun run typecheck",
             rawInput: {

@@ -6,6 +6,7 @@ import {
 } from "@t3tools/client-runtime/tool-calls";
 
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
+import ChatMarkdown from "../ChatMarkdown";
 import { cn } from "~/lib/utils";
 
 function ToolCallDiff(props: { content: string }) {
@@ -82,6 +83,14 @@ function ToolCallSectionView(props: {
         </div>
       ) : section.kind === "code" && section.language === "diff" ? (
         <ToolCallDiff content={section.content} />
+      ) : section.kind === "text" && section.format === "markdown" ? (
+        <div className="max-h-72 overflow-auto rounded-md border border-border/45 bg-muted/20 px-2 py-1.5">
+          <ChatMarkdown
+            text={section.content}
+            cwd={workspaceRoot}
+            className="text-[11px] leading-relaxed [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1"
+          />
+        </div>
       ) : (
         <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border/45 bg-muted/20 p-2 font-mono text-[11px] leading-relaxed text-muted-foreground select-text">
           {toolCallSectionText(section)}

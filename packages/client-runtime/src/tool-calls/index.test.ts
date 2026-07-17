@@ -209,6 +209,72 @@ describe("deriveToolCallPresentation", () => {
     );
   });
 
+  it("uses Hermes ACP kinds and preserved titles for file and web searches", () => {
+    const fileSearch = deriveToolCallPresentation({
+      activityKind: "tool.completed",
+      summary: "Searched files",
+      payload: {
+        itemId: "hermes-search-1",
+        itemType: "web_search",
+        title: "Searched files",
+        data: {
+          toolCallId: "hermes-search-1",
+          kind: "search",
+          providerTitle: "search: makeAcpToolCallEvent",
+          content: [
+            {
+              type: "content",
+              content: { type: "text", text: "Found 3 matches." },
+            },
+          ],
+        },
+      },
+    });
+    const webSearch = deriveToolCallPresentation({
+      activityKind: "tool.completed",
+      summary: "Searched web",
+      payload: {
+        itemId: "hermes-web-1",
+        itemType: "web_search",
+        title: "Searched web",
+        data: {
+          toolCallId: "hermes-web-1",
+          kind: "fetch",
+          providerTitle: "web search: ACP tool call rendering",
+          content: [
+            {
+              type: "content",
+              content: { type: "text", text: "**Results**\n\n- One\n- Two" },
+            },
+          ],
+        },
+      },
+    });
+
+    expect(fileSearch).toMatchObject({
+      category: "search",
+      title: "Searched files",
+      preview: "makeAcpToolCallEvent",
+    });
+    expect(webSearch).toMatchObject({
+      category: "web",
+      title: "Searched web",
+      preview: "ACP tool call rendering",
+      sections: [
+        expect.objectContaining({
+          kind: "text",
+          title: "Search query",
+          content: "ACP tool call rendering",
+        }),
+        expect.objectContaining({
+          kind: "text",
+          title: "Tool output",
+          format: "markdown",
+        }),
+      ],
+    });
+  });
+
   it("projects Claude tool input and result using the same model", () => {
     const presentation = deriveToolCallPresentation({
       activityKind: "tool.completed",

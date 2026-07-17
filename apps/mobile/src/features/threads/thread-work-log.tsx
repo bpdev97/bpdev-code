@@ -1,5 +1,6 @@
 import * as Haptics from "expo-haptics";
 import { type AppSymbolName, SymbolView } from "../../components/AppSymbol";
+import type { ReactNode } from "react";
 import {
   Linking,
   LayoutAnimation,
@@ -91,7 +92,10 @@ function isFreshRow(createdAt: string): boolean {
   return Number.isFinite(timestamp) && Date.now() - timestamp < FRESH_ROW_WINDOW_MS;
 }
 
-function ToolCallSection(props: { readonly section: ToolCallDetailSection }) {
+function ToolCallSection(props: {
+  readonly section: ToolCallDetailSection;
+  readonly renderMarkdown: (text: string) => ReactNode;
+}) {
   const { section } = props;
   return (
     <View className="gap-1">
@@ -145,6 +149,15 @@ function ToolCallSection(props: { readonly section: ToolCallDetailSection }) {
             </Pressable>
           ))}
         </View>
+      ) : section.kind === "text" && section.format === "markdown" ? (
+        <ScrollView
+          nestedScrollEnabled
+          directionalLockEnabled
+          showsVerticalScrollIndicator
+          className="max-h-56 rounded-md bg-neutral-500/[0.06] px-2 py-1 dark:bg-black/20"
+        >
+          {props.renderMarkdown(section.content)}
+        </ScrollView>
       ) : (
         <ScrollView
           nestedScrollEnabled
@@ -162,7 +175,10 @@ function ToolCallSection(props: { readonly section: ToolCallDetailSection }) {
   );
 }
 
-function ToolCallDetails(props: { readonly toolCall: ToolCallPresentation }) {
+function ToolCallDetails(props: {
+  readonly toolCall: ToolCallPresentation;
+  readonly renderMarkdown: (text: string) => ReactNode;
+}) {
   const metadata = [
     props.toolCall.cwd ? `cwd ${props.toolCall.cwd}` : null,
     props.toolCall.exitCode !== undefined ? `exit ${props.toolCall.exitCode}` : null,
@@ -179,7 +195,11 @@ function ToolCallDetails(props: { readonly toolCall: ToolCallPresentation }) {
         </Text>
       ) : null}
       {props.toolCall.sections.map((section) => (
-        <ToolCallSection key={`${section.kind}:${section.title}`} section={section} />
+        <ToolCallSection
+          key={`${section.kind}:${section.title}`}
+          section={section}
+          renderMarkdown={props.renderMarkdown}
+        />
       ))}
     </View>
   );
@@ -191,6 +211,7 @@ export function ThreadWorkLog(props: {
   readonly expandedRows: Readonly<Record<string, boolean>>;
   readonly iconSubtleColor: import("react-native").ColorValue;
   readonly onCopyRow: (rowId: string, value: string) => void;
+  readonly renderMarkdown: (text: string) => ReactNode;
   readonly onToggleRow: (rowId: string) => void;
 }) {
   const colorScheme = useColorScheme();
@@ -326,7 +347,10 @@ export function ThreadWorkLog(props: {
               {expanded && canExpand ? (
                 <View className="ml-7 border-l border-neutral-300/60 pb-1 pl-3 pt-0.5 dark:border-white/[0.12]">
                   {row.toolCall ? (
-                    <ToolCallDetails toolCall={row.toolCall} />
+                    <ToolCallDetails
+                      toolCall={row.toolCall}
+                      renderMarkdown={props.renderMarkdown}
+                    />
                   ) : row.fullDetail ? (
                     <ScrollView
                       nestedScrollEnabled

@@ -990,6 +990,16 @@ function renderFeedEntry(
       expandedRows={props.expandedWorkRows}
       iconSubtleColor={iconSubtleColor}
       onCopyRow={props.onCopyWorkRow}
+      renderMarkdown={(text) => (
+        <Markdown
+          options={{ gfm: true }}
+          renderers={markdownStyles.assistant.renderers}
+          styles={markdownStyles.assistant.styles}
+          theme={markdownStyles.assistant.theme}
+        >
+          {text}
+        </Markdown>
+      )}
       onToggleRow={props.onToggleWorkRow}
     />
   );

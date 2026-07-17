@@ -245,7 +245,11 @@ function extractCommandFromTitle(title: string | undefined): string | undefined 
     return undefined;
   }
   const match = /`([^`]+)`/.exec(title);
-  return match?.[1]?.trim() || undefined;
+  if (match?.[1]?.trim()) {
+    return match[1].trim();
+  }
+  const terminalMatch = /^terminal:\s*(.+)$/iu.exec(title);
+  return terminalMatch?.[1]?.trim() || undefined;
 }
 
 function extractToolCallCommand(rawInput: unknown, title: string | undefined): string | undefined {
@@ -335,6 +339,9 @@ function makeToolCallState(
       ? title
       : undefined;
   const data: Record<string, unknown> = { toolCallId };
+  if (title) {
+    data.providerTitle = title;
+  }
   const kind = normalizeToolKind(input.kind);
   if (kind) {
     data.kind = kind;
