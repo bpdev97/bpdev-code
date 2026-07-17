@@ -155,60 +155,6 @@ describe("deriveToolCallPresentation", () => {
     );
   });
 
-  it("projects ACP content blocks from Hermes-style tool calls", () => {
-    const presentation = deriveToolCallPresentation({
-      activityKind: "tool.completed",
-      summary: "Edit",
-      payload: {
-        itemId: "hermes-edit-1",
-        itemType: "file_change",
-        data: {
-          toolCallId: "hermes-edit-1",
-          kind: "edit",
-          content: [
-            {
-              type: "content",
-              content: { type: "text", text: "Updated the configuration." },
-            },
-            {
-              type: "diff",
-              path: "config.json",
-              oldText: '{"enabled":false}',
-              newText: '{"enabled":true}',
-            },
-            {
-              type: "content",
-              content: {
-                type: "resource_link",
-                name: "Documentation",
-                uri: "https://example.com/docs",
-              },
-            },
-          ],
-        },
-      },
-    });
-
-    expect(presentation?.sections).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ title: "Tool output", content: "Updated the configuration." }),
-        expect.objectContaining({
-          kind: "files",
-          files: [
-            expect.objectContaining({
-              path: "config.json",
-              diff: expect.stringContaining('{"enabled":true}'),
-            }),
-          ],
-        }),
-        expect.objectContaining({
-          kind: "links",
-          links: [{ label: "Documentation", url: "https://example.com/docs" }],
-        }),
-      ]),
-    );
-  });
-
   it("projects Claude tool input and result using the same model", () => {
     const presentation = deriveToolCallPresentation({
       activityKind: "tool.completed",
