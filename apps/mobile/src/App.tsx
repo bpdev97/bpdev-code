@@ -11,6 +11,7 @@ import { createStaticNavigation, DarkTheme, DefaultTheme } from "@react-navigati
 import { RegistryContext } from "@effect/atom-react";
 import { ConfirmDialogHost } from "./components/ConfirmDialogHost";
 import { CloudAuthProvider } from "./features/cloud/CloudAuthProvider";
+import { prepareNativeShowcaseCapture } from "./features/showcase/nativeShowcaseScene";
 import { IncomingShareProvider } from "./features/sharing/IncomingShareProvider";
 import { AppearancePreferencesProvider } from "./features/settings/appearance/AppearancePreferencesProvider";
 import { RootStack } from "./Stack";
@@ -26,6 +27,10 @@ import {
 } from "./features/agent-awareness/remoteRegistration";
 
 import "../global.css";
+
+if (process.env.EXPO_PUBLIC_SHOWCASE === "1") {
+  prepareNativeShowcaseCapture();
+}
 
 const appLinking = {
   prefixes: [
