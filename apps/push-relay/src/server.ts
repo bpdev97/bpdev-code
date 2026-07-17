@@ -172,22 +172,16 @@ export async function startServer(
   const deliver = async (
     target: DeliveryTarget,
     state: ReturnType<typeof decodePublish>["state"],
+    updateNotificationWatermark: boolean,
   ): Promise<void> => {
     const aggregate = store.aggregate();
     const alert = liveActivityAlert({
       state,
-      previous: target.lastAggregate,
+      previous: target.lastNotificationAggregate,
       preferences: target.preferences,
     });
-    if (
-      alert === null &&
-      target.lastAggregate !== null &&
-      JSON.stringify(target.lastAggregate) === JSON.stringify(aggregate)
-    ) {
-      return;
-    }
 
-    let liveActivityAlertPayload = alert;
+    let notificationDelivered = alert === null;
     if (alert && target.pushToken && state) {
       const result = await apns.sendNotification({
         token: target.pushToken,
@@ -195,7 +189,10 @@ export async function startServer(
         environment: target.apsEnvironment,
         state,
       });
-      if (result.ok) liveActivityAlertPayload = null;
+      if (result.ok) {
+        notificationDelivered = true;
+        store.recordNotificationAggregate(target.deviceId, aggregate);
+      }
       if (result.invalidToken) store.clearPushToken(target.deviceId);
       if (!result.ok) {
         console.warn("APNs notification delivery failed", {
@@ -206,24 +203,38 @@ export async function startServer(
         });
       }
     }
+    if (alert === null && updateNotificationWatermark) {
+      store.recordNotificationAggregate(target.deviceId, aggregate);
+    }
 
-    let liveActivityDelivered = true;
-    if (target.activityPushToken && target.preferences.liveActivitiesEnabled) {
+    const liveActivityChanged =
+      JSON.stringify(target.lastLiveActivityAggregate) !== JSON.stringify(aggregate);
+    if (
+      target.activityPushToken &&
+      target.preferences.liveActivitiesEnabled &&
+      (liveActivityChanged || (!notificationDelivered && alert !== null))
+    ) {
       cancelActivityEnd(target.deviceId);
       const event = aggregate === null ? "end" : "update";
+      const includesNotification = !notificationDelivered && alert !== null;
       const result = await apns.sendLiveActivity({
         token: target.activityPushToken,
         bundleId: target.bundleId,
         environment: target.apsEnvironment,
         aggregate,
-        alert: liveActivityAlertPayload,
+        alert: includesNotification ? alert : null,
         event,
       });
-      liveActivityDelivered = result.ok || result.invalidToken;
       if (result.invalidToken || (result.ok && event === "end")) {
         store.clearActivityToken(target.deviceId);
-      } else if (result.ok && aggregate?.activeCount === 0) {
-        scheduleActivityEnd(target.deviceId, target.activityPushToken);
+      } else if (result.ok) {
+        store.recordLiveActivityAggregate(target.deviceId, aggregate);
+        if (aggregate?.activeCount === 0) {
+          scheduleActivityEnd(target.deviceId, target.activityPushToken);
+        }
+      }
+      if (result.ok && includesNotification) {
+        store.recordNotificationAggregate(target.deviceId, aggregate);
       }
       if (!result.ok) {
         console.warn("APNs Live Activity delivery failed", {
@@ -233,9 +244,6 @@ export async function startServer(
           reason: result.reason,
         });
       }
-    }
-    if (liveActivityDelivered) {
-      store.recordAggregate(target.deviceId, aggregate);
     }
   };
 
@@ -287,7 +295,7 @@ export async function startServer(
           });
           const target = store.target(registration.deviceId);
           if (target?.activityPushToken && target.preferences.liveActivitiesEnabled) {
-            await deliver(target, null);
+            await deliver(target, null, false);
           }
           json(response, 200, { ok: true });
           return;
@@ -308,7 +316,7 @@ export async function startServer(
           const publicationOperation = publishQueue.then(async () => {
             const targets = store.targets();
             store.publish(publication);
-            await mapConcurrent(targets, 4, (target) => deliver(target, publication.state));
+            await mapConcurrent(targets, 4, (target) => deliver(target, publication.state, true));
           });
           publishQueue = publicationOperation.catch(() => undefined);
           await publicationOperation;
