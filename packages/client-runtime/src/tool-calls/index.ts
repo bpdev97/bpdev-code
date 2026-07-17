@@ -409,6 +409,55 @@ function collectLinks(value: unknown, links: Map<string, ToolCallLink>, depth = 
   }
 }
 
+function collectAcpContent(
+  value: unknown,
+  text: string[],
+  files: Map<string, ToolCallFile>,
+  links: Map<string, ToolCallLink>,
+  terminals: string[],
+  depth = 0,
+): void {
+  if (depth > 5 || value === null || value === undefined) return;
+  if (Array.isArray(value)) {
+    for (const entry of value) collectAcpContent(entry, text, files, links, terminals, depth + 1);
+    return;
+  }
+  const record = asRecord(value);
+  if (!record) return;
+
+  const type = asString(record.type);
+  if (type === "diff") {
+    const path = firstString(record.path);
+    const newText = asString(record.newText);
+    if (path && newText) {
+      const oldText = asString(record.oldText);
+      const diff = oldText ? `--- ${path}\n+++ ${path}\n@@\n${oldText}\n${newText}` : newText;
+      files.set(path, { path, change: "update", diff: limitText(diff).text });
+    }
+    return;
+  }
+  if (type === "terminal") {
+    const terminalId = firstString(record.terminalId);
+    if (terminalId) terminals.push(terminalId);
+    return;
+  }
+  if (type === "resource_link") {
+    const uri = firstString(record.uri);
+    if (uri && /^https?:\/\//iu.test(uri)) {
+      links.set(uri, { url: uri, label: firstString(record.title, record.name) ?? uri });
+    }
+    return;
+  }
+  if (type === "content") {
+    collectAcpContent(record.content, text, files, links, terminals, depth + 1);
+    return;
+  }
+  if (type === "text") {
+    const content = asString(record.text);
+    if (content) text.push(content);
+  }
+}
+
 function extractTextContent(value: unknown): string | null {
   const direct = asString(value);
   if (direct) return direct;
@@ -601,6 +650,11 @@ export function deriveToolCallPresentation(
   collectLinks(item, links);
   collectLinks(data, links);
 
+  const contentText: string[] = [];
+  const terminalIds: string[] = [];
+  collectAcpContent(data.content, contentText, files, links, terminalIds);
+  collectAcpContent(rawOutput?.content, contentText, files, links, terminalIds);
+
   const kind = firstString(data.kind, item.kind, item.type);
   const category = categoryFromInput({
     itemType,
@@ -655,6 +709,7 @@ export function deriveToolCallPresentation(
     rawOutput?.stdout,
     data.output,
   );
+  const contentOutput = contentText.length > 0 ? contentText.join("\n\n") : null;
   const stderr = firstString(item.stderr, itemResult?.stderr, rawOutput?.stderr, data.stderr);
   const errorValue = item.error ?? data.error ?? resultRecord?.error;
   const resultValue =
@@ -682,7 +737,14 @@ export function deriveToolCallPresentation(
     });
   }
   appendTextSection(sections, "code", "Output", output, "text");
+  if (contentOutput && contentOutput !== output) {
+    appendTextSection(sections, "text", "Tool output", contentOutput);
+  }
   appendTextSection(sections, "code", "Error output", stderr, "text");
+
+  if (terminalIds.length > 0) {
+    appendTextSection(sections, "code", "Terminal", [...new Set(terminalIds)].join("\n"), "text");
+  }
 
   if (hasUsefulValue(resultValue)) {
     const resultText = extractTextContent(resultValue);
