@@ -18,6 +18,8 @@ export const PERSONAL_DISTRIBUTION = {
   },
   macos: {
     appId: "com.bpdev97.t3code.macos",
+    scheme: "bpdev-code",
+    developmentScheme: "bpdev-code-dev",
     productName: "bpdev code",
     developmentProductName: "bpdev code Dev",
     nightlyProductName: "bpdev code Nightly",

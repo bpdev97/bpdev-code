@@ -12,7 +12,8 @@ sanitized agent-awareness state to the container.
   sessions.
 - The container accepts only device registration, Live Activity registration, snapshot reads, and
   agent-activity publication. It cannot forward arbitrary APNs payloads.
-- APNs tokens and the last delivered aggregate are stored in SQLite. Logs include only token suffixes.
+- APNs tokens and channel-specific notification and Live Activity delivery watermarks are stored in
+  SQLite. Logs include only token suffixes.
 - Bind the published port to the host's Tailscale address and restrict it with Tailscale grants to
   the machines that run T3 servers.
 
@@ -92,6 +93,13 @@ Standard notifications and Live Activity updates are separate deliveries. When a
 a terminal state, the relay sends the configured notification and keeps the completed Live Activity
 updateable for five minutes. New work during that grace period reuses the activity; otherwise the
 relay ends it and clears its update token.
+
+The relay advances each channel's watermark only after APNs accepts that delivery. A transient
+failure therefore leaves an identical publication eligible for retry. If a standard notification
+succeeds but its Live Activity update fails, the retry sends only the Live Activity update; if the
+standard notification fails but APNs accepts the alert embedded in the Live Activity update, that
+alert satisfies the notification channel as well. Invalid tokens are cleared so the app can
+re-register them.
 
 ## Verification
 

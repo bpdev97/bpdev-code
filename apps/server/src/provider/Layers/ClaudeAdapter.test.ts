@@ -156,6 +156,7 @@ function makeHarness(config?: {
   readonly baseDir?: string;
   readonly claudeConfig?: Partial<ClaudeSettings>;
   readonly instanceId?: ProviderInstanceId;
+  readonly taskLifecycleRecovery?: ClaudeAdapterLiveOptions["taskLifecycleRecovery"];
 }) {
   const query = new FakeClaudeQuery();
   let createInput:
@@ -171,6 +172,9 @@ function makeHarness(config?: {
       createInput = input;
       return query;
     },
+    ...(config?.taskLifecycleRecovery
+      ? { taskLifecycleRecovery: config.taskLifecycleRecovery }
+      : {}),
     ...(config?.nativeEventLogger
       ? {
           nativeEventLogger: config.nativeEventLogger,
@@ -262,6 +266,21 @@ async function readFirstPromptMessage(
     return undefined;
   }
   return next.value;
+}
+
+function waitForRuntimeEvent(
+  runtimeEvents: ReadonlyArray<ProviderRuntimeEvent>,
+  predicate: (event: ProviderRuntimeEvent) => boolean,
+) {
+  return Effect.gen(function* () {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if (runtimeEvents.some(predicate)) {
+        return;
+      }
+      yield* Effect.yieldNow;
+    }
+    return yield* Effect.die("Timed out waiting for Claude runtime event.");
+  });
 }
 
 const THREAD_ID = ThreadId.make("thread-claude-1");
@@ -1345,7 +1364,12 @@ describe("ClaudeAdapterLive", () => {
   });
 
   it.effect("keeps parent subagent tools intact and waits for Claude's idle signal", () => {
-    const harness = makeHarness();
+    const harness = makeHarness({
+      taskLifecycleRecovery: {
+        settledTaskIdleGraceMs: 50,
+        activeTaskResultTimeoutMs: 100,
+      },
+    });
     return Effect.gen(function* () {
       const adapter = yield* ClaudeAdapter;
       const runtimeEvents: Array<ProviderRuntimeEvent> = [];
@@ -1354,17 +1378,6 @@ describe("ClaudeAdapterLive", () => {
           runtimeEvents.push(event);
         }),
       ).pipe(Effect.forkChild);
-      const waitForEvent = (predicate: (event: ProviderRuntimeEvent) => boolean) =>
-        Effect.gen(function* () {
-          for (let attempt = 0; attempt < 100; attempt += 1) {
-            if (runtimeEvents.some(predicate)) {
-              return;
-            }
-            yield* Effect.yieldNow;
-          }
-          return yield* Effect.die("Timed out waiting for Claude runtime event.");
-        });
-
       const session = yield* adapter.startSession({
         threadId: THREAD_ID,
         provider: ProviderDriverKind.make("claudeAgent"),
@@ -1463,7 +1476,7 @@ describe("ClaudeAdapterLive", () => {
         uuid: "task-subagent-progress",
       } as unknown as SDKMessage);
 
-      yield* waitForEvent((event) => event.type === "task.progress");
+      yield* waitForRuntimeEvent(runtimeEvents, (event) => event.type === "task.progress");
       assert.equal(
         runtimeEvents.some((event) => event.type === "turn.completed"),
         false,
@@ -1489,7 +1502,8 @@ describe("ClaudeAdapterLive", () => {
         uuid: "session-subagent-idle",
       } as unknown as SDKMessage);
 
-      yield* waitForEvent((event) => event.type === "turn.completed");
+      yield* waitForRuntimeEvent(runtimeEvents, (event) => event.type === "turn.completed");
+      yield* TestClock.adjust("1 second");
       runtimeEventsFiber.interruptUnsafe();
 
       const startedItems = runtimeEvents.filter((event) => event.type === "item.started");
@@ -1506,6 +1520,190 @@ describe("ClaudeAdapterLive", () => {
         runtimeEvents.some((event) => event.type === "runtime.warning"),
         false,
       );
+      assert.equal(
+        runtimeEvents.filter((event) => event.type === "turn.completed").length,
+        1,
+        "authoritative idle must cancel the recovery fiber",
+      );
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect(
+    "recovers a pending result when terminal tasks are missing Claude's idle signal",
+    () => {
+      const harness = makeHarness({
+        taskLifecycleRecovery: {
+          settledTaskIdleGraceMs: 50,
+          activeTaskResultTimeoutMs: 1_000,
+        },
+      });
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+        const runtimeEvents: Array<ProviderRuntimeEvent> = [];
+        const runtimeEventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
+          Effect.sync(() => {
+            runtimeEvents.push(event);
+          }),
+        ).pipe(Effect.forkChild);
+        const session = yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
+        yield* adapter.sendTurn({
+          threadId: session.threadId,
+          input: "delegate this",
+          attachments: [],
+        });
+
+        harness.query.emit({
+          type: "system",
+          subtype: "task_started",
+          task_id: "task-missing-idle",
+          tool_use_id: "tool-missing-idle",
+          description: "Finish delegated work",
+          task_type: "agent",
+          session_id: "sdk-session-missing-idle",
+          uuid: "task-missing-idle-started",
+        } as unknown as SDKMessage);
+        harness.query.emit({
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          errors: [],
+          session_id: "sdk-session-missing-idle",
+          uuid: "result-missing-idle",
+        } as unknown as SDKMessage);
+        harness.query.emit({
+          type: "system",
+          subtype: "task_notification",
+          task_id: "task-missing-idle",
+          tool_use_id: "tool-missing-idle",
+          status: "completed",
+          output_file: "/tmp/task-missing-idle.output",
+          summary: "Delegated work finished",
+          session_id: "sdk-session-missing-idle",
+          uuid: "task-missing-idle-completed",
+        } as unknown as SDKMessage);
+
+        yield* waitForRuntimeEvent(runtimeEvents, (event) => event.type === "task.completed");
+        yield* TestClock.adjust("49 millis");
+        assert.equal(
+          runtimeEvents.some((event) => event.type === "turn.completed"),
+          false,
+        );
+
+        yield* TestClock.adjust("1 millis");
+        yield* waitForRuntimeEvent(runtimeEvents, (event) => event.type === "turn.completed");
+        runtimeEventsFiber.interruptUnsafe();
+
+        const warning = runtimeEvents.find((event) => event.type === "runtime.warning");
+        assert.equal(warning?.type, "runtime.warning");
+        if (warning?.type === "runtime.warning") {
+          assert.deepEqual(warning.payload.detail, {
+            reason: "claude_missing_task_idle",
+            graceMs: 50,
+            observedTaskIds: ["task-missing-idle"],
+          });
+        }
+        const completed = runtimeEvents.find((event) => event.type === "turn.completed");
+        assert.equal(completed?.type, "turn.completed");
+        if (completed?.type === "turn.completed") {
+          assert.equal(completed.payload.state, "completed");
+        }
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
+
+  it.effect("fails a pending result only after an active Claude task exceeds its timeout", () => {
+    const harness = makeHarness({
+      taskLifecycleRecovery: {
+        settledTaskIdleGraceMs: 25,
+        activeTaskResultTimeoutMs: 100,
+      },
+    });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const runtimeEvents: Array<ProviderRuntimeEvent> = [];
+      const runtimeEventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
+        Effect.sync(() => {
+          runtimeEvents.push(event);
+        }),
+      ).pipe(Effect.forkChild);
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "delegate this",
+        attachments: [],
+      });
+
+      harness.query.emit({
+        type: "system",
+        subtype: "task_started",
+        task_id: "task-still-active",
+        tool_use_id: "tool-still-active",
+        description: "Keep working",
+        task_type: "agent",
+        session_id: "sdk-session-active-timeout",
+        uuid: "task-still-active-started",
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        errors: [],
+        session_id: "sdk-session-active-timeout",
+        uuid: "result-active-timeout",
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "system",
+        subtype: "task_progress",
+        task_id: "task-still-active",
+        description: "Still working",
+        session_id: "sdk-session-active-timeout",
+        uuid: "task-still-active-progress",
+      } as unknown as SDKMessage);
+
+      yield* waitForRuntimeEvent(runtimeEvents, (event) => event.type === "task.progress");
+      yield* TestClock.adjust("99 millis");
+      assert.equal(
+        runtimeEvents.some((event) => event.type === "turn.completed"),
+        false,
+      );
+      assert.equal(
+        runtimeEvents.some((event) => event.type === "runtime.error"),
+        false,
+      );
+
+      yield* TestClock.adjust("1 millis");
+      yield* waitForRuntimeEvent(runtimeEvents, (event) => event.type === "turn.completed");
+      runtimeEventsFiber.interruptUnsafe();
+
+      const runtimeError = runtimeEvents.find((event) => event.type === "runtime.error");
+      assert.equal(runtimeError?.type, "runtime.error");
+      if (runtimeError?.type === "runtime.error") {
+        assert.deepEqual(runtimeError.payload.detail, {
+          reason: "claude_task_result_timeout",
+          timeoutMs: 100,
+          activeTaskIds: ["task-still-active"],
+          observedTaskIds: ["task-still-active"],
+        });
+      }
+      const completed = runtimeEvents.find((event) => event.type === "turn.completed");
+      assert.equal(completed?.type, "turn.completed");
+      if (completed?.type === "turn.completed") {
+        assert.equal(completed.payload.state, "failed");
+      }
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

@@ -45,9 +45,19 @@ const success: ApnsResult = {
   invalidToken: false,
 };
 
+const transientFailure: ApnsResult = {
+  ok: false,
+  status: 503,
+  reason: "ServiceUnavailable",
+  apnsId: "test-failed-apns-id",
+  invalidToken: false,
+};
+
 class RecordingApnsClient implements ApnsDeliveryClient {
   readonly notifications: NotificationInput[] = [];
   readonly liveActivities: LiveActivityInput[] = [];
+  readonly notificationResults: ApnsResult[] = [];
+  readonly liveActivityResults: ApnsResult[] = [];
 
   ready(): Promise<void> {
     return Promise.resolve();
@@ -55,12 +65,12 @@ class RecordingApnsClient implements ApnsDeliveryClient {
 
   sendNotification(input: NotificationInput): Promise<ApnsResult> {
     this.notifications.push(input);
-    return Promise.resolve(success);
+    return Promise.resolve(this.notificationResults.shift() ?? success);
   }
 
   sendLiveActivity(input: LiveActivityInput): Promise<ApnsResult> {
     this.liveActivities.push(input);
-    return Promise.resolve(success);
+    return Promise.resolve(this.liveActivityResults.shift() ?? success);
   }
 }
 
@@ -140,12 +150,19 @@ async function publish(
   server: PushRelayServer,
   phase: RelayAgentActivityState["phase"],
 ): Promise<void> {
+  await publishState(server, activityState(phase));
+}
+
+async function publishState(
+  server: PushRelayServer,
+  state: RelayAgentActivityState,
+): Promise<void> {
   const result = await request(server, "/v1/agent-activities", {
     method: "POST",
     body: {
-      environmentId: "environment-1",
-      threadId: "thread-1",
-      state: activityState(phase),
+      environmentId: state.environmentId,
+      threadId: state.threadId,
+      state,
     },
   });
   expect(result).toEqual({ status: 200, body: { ok: true } });
@@ -157,6 +174,7 @@ describe("personal push relay HTTP integration", () => {
   afterEach(async () => {
     await server?.close();
     server = null;
+    vi.restoreAllMocks();
   });
 
   it("delivers one notification when a thread enters an enabled phase", async () => {
@@ -180,6 +198,72 @@ describe("personal push relay HTTP integration", () => {
       },
     });
     expect(apns.liveActivities).toHaveLength(0);
+  });
+
+  it("retries an identical notification after transient APNs failure", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const apns = new RecordingApnsClient();
+    apns.notificationResults.push(transientFailure, success);
+    server = await startServer(config, { apns });
+    await registerDevice(server, { liveActivitiesEnabled: false });
+    await publish(server, "running");
+
+    const waiting = activityState("waiting_for_approval");
+    await publishState(server, waiting);
+    await publishState(server, waiting);
+
+    expect(apns.notifications).toHaveLength(2);
+    expect(apns.notifications.map((delivery) => delivery.state)).toEqual([waiting, waiting]);
+    expect(apns.liveActivities).toHaveLength(0);
+  });
+
+  it("retries only a failed Live Activity channel after its notification succeeds", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const apns = new RecordingApnsClient();
+    server = await startServer(config, { apns });
+    await registerDevice(server);
+    await publish(server, "running");
+    await request(server, "/v1/live-activities", {
+      method: "POST",
+      body: { deviceId: "device-1", activityPushToken: "live-activity-token" },
+    });
+    apns.liveActivityResults.push(transientFailure, success);
+
+    const waiting = activityState("waiting_for_approval");
+    await publishState(server, waiting);
+    await publishState(server, waiting);
+
+    expect(apns.notifications).toHaveLength(1);
+    expect(apns.liveActivities).toHaveLength(3);
+    expect(apns.liveActivities.slice(1).map((delivery) => delivery.aggregate)).toEqual([
+      apns.liveActivities[1]?.aggregate,
+      apns.liveActivities[1]?.aggregate,
+    ]);
+    expect(apns.liveActivities.slice(1).map((delivery) => delivery.alert)).toEqual([null, null]);
+  });
+
+  it("uses a successful Live Activity alert to acknowledge a failed notification", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const apns = new RecordingApnsClient();
+    server = await startServer(config, { apns });
+    await registerDevice(server);
+    await publish(server, "running");
+    await request(server, "/v1/live-activities", {
+      method: "POST",
+      body: { deviceId: "device-1", activityPushToken: "live-activity-token" },
+    });
+    apns.notificationResults.push(transientFailure);
+
+    const waiting = activityState("waiting_for_approval");
+    await publishState(server, waiting);
+    await publishState(server, waiting);
+
+    expect(apns.notifications).toHaveLength(1);
+    expect(apns.liveActivities).toHaveLength(2);
+    expect(apns.liveActivities.at(-1)?.alert).toEqual({
+      title: "Implement notifications",
+      body: "Approval needed: Push relay",
+    });
   });
 
   it("notifies separately and keeps a completed Live Activity reusable until its grace period", async () => {

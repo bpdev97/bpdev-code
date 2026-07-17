@@ -16,7 +16,8 @@ export interface DeliveryTarget {
   readonly bundleId: string | null;
   readonly apsEnvironment: "sandbox" | "production" | null;
   readonly preferences: RelayAgentAwarenessPreferences;
-  readonly lastAggregate: RelayAgentActivityAggregateState | null;
+  readonly lastNotificationAggregate: RelayAgentActivityAggregateState | null;
+  readonly lastLiveActivityAggregate: RelayAgentActivityAggregateState | null;
 }
 
 interface DeviceRow {
@@ -26,7 +27,12 @@ interface DeviceRow {
   bundle_id: string | null;
   aps_environment: "sandbox" | "production" | null;
   preferences_json: string;
-  last_aggregate_json: string | null;
+  last_notification_aggregate_json: string | null;
+  last_live_activity_aggregate_json: string | null;
+}
+
+interface TableColumnRow {
+  name: string;
 }
 
 interface ActivityRow {
@@ -51,6 +57,8 @@ export class RelayStore {
         aps_environment TEXT,
         preferences_json TEXT NOT NULL,
         last_aggregate_json TEXT,
+        last_notification_aggregate_json TEXT,
+        last_live_activity_aggregate_json TEXT,
         updated_at TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS activities (
@@ -61,6 +69,31 @@ export class RelayStore {
         PRIMARY KEY (environment_id, thread_id)
       );
     `);
+    this.#migrateDeliveryWatermarks();
+  }
+
+  #migrateDeliveryWatermarks(): void {
+    const columns = new Set(
+      (
+        this.#database.prepare("PRAGMA table_info(devices)").all() as unknown as TableColumnRow[]
+      ).map((column) => column.name),
+    );
+    const missingColumns = (
+      ["last_notification_aggregate_json", "last_live_activity_aggregate_json"] as const
+    ).filter((column) => !columns.has(column));
+    if (missingColumns.length === 0) return;
+
+    this.#database.exec("BEGIN IMMEDIATE");
+    try {
+      for (const column of missingColumns) {
+        this.#database.exec(`ALTER TABLE devices ADD COLUMN ${column} TEXT`);
+        this.#database.exec(`UPDATE devices SET ${column} = last_aggregate_json`);
+      }
+      this.#database.exec("COMMIT");
+    } catch (error) {
+      this.#database.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   close(): void {
@@ -95,7 +128,8 @@ export class RelayStore {
   registerLiveActivity(input: RelayLiveActivityRegistrationRequest): boolean {
     const result = this.#database
       .prepare(`
-      UPDATE devices SET activity_push_token = ?, last_aggregate_json = NULL, updated_at = ?
+      UPDATE devices
+      SET activity_push_token = ?, last_live_activity_aggregate_json = NULL, updated_at = ?
       WHERE device_id = ?
     `)
       .run(input.activityPushToken, new Date().toISOString(), input.deviceId);
@@ -135,7 +169,8 @@ export class RelayStore {
     const rows = this.#database
       .prepare(`
       SELECT device_id, push_token, activity_push_token, bundle_id, aps_environment,
-             preferences_json, last_aggregate_json
+             preferences_json, last_notification_aggregate_json,
+             last_live_activity_aggregate_json
       FROM devices
     `)
       .all() as unknown as DeviceRow[];
@@ -146,8 +181,11 @@ export class RelayStore {
       bundleId: row.bundle_id,
       apsEnvironment: row.aps_environment,
       preferences: JSON.parse(row.preferences_json) as RelayAgentAwarenessPreferences,
-      lastAggregate: row.last_aggregate_json
-        ? (JSON.parse(row.last_aggregate_json) as RelayAgentActivityAggregateState)
+      lastNotificationAggregate: row.last_notification_aggregate_json
+        ? (JSON.parse(row.last_notification_aggregate_json) as RelayAgentActivityAggregateState)
+        : null,
+      lastLiveActivityAggregate: row.last_live_activity_aggregate_json
+        ? (JSON.parse(row.last_live_activity_aggregate_json) as RelayAgentActivityAggregateState)
         : null,
     }));
   }
@@ -156,9 +194,25 @@ export class RelayStore {
     return this.targets().find((target) => target.deviceId === deviceId) ?? null;
   }
 
-  recordAggregate(deviceId: string, aggregate: RelayAgentActivityAggregateState | null): void {
+  recordNotificationAggregate(
+    deviceId: string,
+    aggregate: RelayAgentActivityAggregateState | null,
+  ): void {
     this.#database
-      .prepare("UPDATE devices SET last_aggregate_json = ?, updated_at = ? WHERE device_id = ?")
+      .prepare(
+        "UPDATE devices SET last_notification_aggregate_json = ?, updated_at = ? WHERE device_id = ?",
+      )
+      .run(aggregate ? JSON.stringify(aggregate) : null, new Date().toISOString(), deviceId);
+  }
+
+  recordLiveActivityAggregate(
+    deviceId: string,
+    aggregate: RelayAgentActivityAggregateState | null,
+  ): void {
+    this.#database
+      .prepare(
+        "UPDATE devices SET last_live_activity_aggregate_json = ?, updated_at = ? WHERE device_id = ?",
+      )
       .run(aggregate ? JSON.stringify(aggregate) : null, new Date().toISOString(), deviceId);
   }
 
@@ -171,7 +225,7 @@ export class RelayStore {
   clearActivityToken(deviceId: string): void {
     this.#database
       .prepare(
-        "UPDATE devices SET activity_push_token = NULL, last_aggregate_json = NULL WHERE device_id = ?",
+        "UPDATE devices SET activity_push_token = NULL, last_live_activity_aggregate_json = NULL WHERE device_id = ?",
       )
       .run(deviceId);
   }

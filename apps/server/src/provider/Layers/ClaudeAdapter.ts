@@ -141,7 +141,12 @@ interface ClaudeTurnState {
    * hold the SDK result until that authoritative idle signal arrives.
    */
   awaitsTaskIdle: boolean;
+  /** Every SDK task observed during this turn, retained for recovery diagnostics. */
+  readonly observedTaskIds: Set<string>;
+  /** Tasks that have started but have not emitted their terminal notification. */
+  readonly activeTaskIds: Set<string>;
   pendingResult?: SDKResultMessage;
+  pendingResultRecoveryFiber?: Fiber.Fiber<void, never>;
 }
 
 interface AssistantTextBlockState {
@@ -227,6 +232,20 @@ export interface ClaudeAdapterLiveOptions {
   }) => ClaudeQueryRuntime;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
+  /** Testable timing controls for recovering from a missing SDK idle event. */
+  readonly taskLifecycleRecovery?: {
+    /** Grace period after all observed tasks are terminal. Defaults to 5 seconds. */
+    readonly settledTaskIdleGraceMs?: number;
+    /** Maximum wait while an observed task remains active. Defaults to 30 minutes. */
+    readonly activeTaskResultTimeoutMs?: number;
+  };
+}
+
+const DEFAULT_SETTLED_TASK_IDLE_GRACE_MS = 5_000;
+const DEFAULT_ACTIVE_TASK_RESULT_TIMEOUT_MS = 30 * 60_000;
+
+function normalizeRecoveryDelay(value: number | undefined, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
 function isUuid(value: string): boolean {
@@ -1368,6 +1387,14 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           stream: "native",
         })
       : undefined);
+  const settledTaskIdleGraceMs = normalizeRecoveryDelay(
+    options?.taskLifecycleRecovery?.settledTaskIdleGraceMs,
+    DEFAULT_SETTLED_TASK_IDLE_GRACE_MS,
+  );
+  const activeTaskResultTimeoutMs = normalizeRecoveryDelay(
+    options?.taskLifecycleRecovery?.activeTaskResultTimeoutMs,
+    DEFAULT_ACTIVE_TASK_RESULT_TIMEOUT_MS,
+  );
 
   const createQuery =
     options?.createQuery ??
@@ -1896,6 +1923,13 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     errorMessage?: string,
     result?: SDKResultMessage,
   ) {
+    const activeTurnState = context.turnState;
+    const pendingResultRecoveryFiber = activeTurnState?.pendingResultRecoveryFiber;
+    if (activeTurnState && pendingResultRecoveryFiber) {
+      delete activeTurnState.pendingResultRecoveryFiber;
+      yield* Fiber.interrupt(pendingResultRecoveryFiber);
+    }
+
     const resultContextWindow = maxClaudeContextWindowFromModelUsage(result?.modelUsage);
     if (resultContextWindow !== undefined) {
       context.lastKnownContextWindow = resultContextWindow;
@@ -2492,6 +2526,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         capturedProposedPlanKeys: new Set(),
         nextSyntheticAssistantBlockIndex: -1,
         awaitsTaskIdle: false,
+        observedTaskIds: new Set(),
+        activeTaskIds: new Set(),
       };
       context.session = {
         ...context.session,
@@ -2572,6 +2608,78 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     yield* completeTurn(context, status, errorMessage, message);
   });
 
+  const schedulePendingResultRecovery = Effect.fn("schedulePendingResultRecovery")(function* (
+    context: ClaudeSessionContext,
+  ) {
+    const turnState = context.turnState;
+    const pendingResult = turnState?.pendingResult;
+    if (!turnState || !pendingResult) {
+      return;
+    }
+
+    const previousFiber = turnState.pendingResultRecoveryFiber;
+    delete turnState.pendingResultRecoveryFiber;
+    if (previousFiber) {
+      yield* Fiber.interrupt(previousFiber);
+    }
+
+    const hasActiveTasks = turnState.activeTaskIds.size > 0;
+    const delayMs = hasActiveTasks ? activeTaskResultTimeoutMs : settledTaskIdleGraceMs;
+    const turnId = turnState.turnId;
+    const recoveryFiber = yield* Effect.sleep(delayMs).pipe(
+      Effect.andThen(
+        Effect.gen(function* () {
+          const currentTurn = context.turnState;
+          if (
+            !currentTurn ||
+            currentTurn.turnId !== turnId ||
+            currentTurn.pendingResult !== pendingResult
+          ) {
+            return;
+          }
+
+          delete currentTurn.pendingResultRecoveryFiber;
+          delete currentTurn.pendingResult;
+          const activeTaskIds = Array.from(currentTurn.activeTaskIds);
+          const observedTaskIds = Array.from(currentTurn.observedTaskIds);
+
+          if (activeTaskIds.length > 0) {
+            const message =
+              "Claude returned a result, but its task lifecycle did not settle before the recovery timeout.";
+            yield* emitRuntimeError(context, message, {
+              reason: "claude_task_result_timeout",
+              timeoutMs: delayMs,
+              activeTaskIds,
+              observedTaskIds,
+            });
+            yield* completeTurn(context, "failed", message, pendingResult);
+            return;
+          }
+
+          yield* emitRuntimeWarning(
+            context,
+            "Claude omitted the idle event after all tasks completed; recovered the pending result.",
+            {
+              reason: "claude_missing_task_idle",
+              graceMs: delayMs,
+              observedTaskIds,
+            },
+          );
+          yield* completeResultMessage(context, pendingResult);
+        }),
+      ),
+      Effect.catch((cause) =>
+        Effect.logError("Claude task result recovery failed.", {
+          cause,
+          threadId: context.session.threadId,
+          turnId,
+        }),
+      ),
+      Effect.forkChild,
+    );
+    turnState.pendingResultRecoveryFiber = recoveryFiber;
+  });
+
   const handleResultMessage = Effect.fn("handleResultMessage")(function* (
     context: ClaudeSessionContext,
     message: SDKMessage,
@@ -2582,6 +2690,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
     if (context.turnState?.awaitsTaskIdle) {
       context.turnState.pendingResult = message;
+      yield* schedulePendingResultRecovery(context);
       return;
     }
 
@@ -2695,6 +2804,11 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       case "task_started":
         if (context.turnState) {
           context.turnState.awaitsTaskIdle = true;
+          context.turnState.observedTaskIds.add(message.task_id);
+          context.turnState.activeTaskIds.add(message.task_id);
+          if (context.turnState.pendingResult) {
+            yield* schedulePendingResultRecovery(context);
+          }
         }
         yield* offerRuntimeEvent({
           ...base,
@@ -2732,6 +2846,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         });
         return;
       case "task_notification":
+        if (context.turnState) {
+          context.turnState.observedTaskIds.add(message.task_id);
+          context.turnState.activeTaskIds.delete(message.task_id);
+        }
         yield* emitThreadTokenUsage(
           context,
           normalizeClaudeTaskProgressTokenUsage(message.usage, context),
@@ -2750,12 +2868,20 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
             ...(message.usage ? { usage: message.usage } : {}),
           },
         });
+        if (context.turnState?.pendingResult) {
+          yield* schedulePendingResultRecovery(context);
+        }
         return;
       case "session_state_changed": {
         if (message.state === "idle") {
           const turnState = context.turnState;
           const pendingResult = turnState?.pendingResult;
           if (pendingResult) {
+            const recoveryFiber = turnState.pendingResultRecoveryFiber;
+            delete turnState.pendingResultRecoveryFiber;
+            if (recoveryFiber) {
+              yield* Fiber.interrupt(recoveryFiber);
+            }
             delete turnState.pendingResult;
             yield* completeResultMessage(context, pendingResult);
           }
@@ -3762,6 +3888,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         capturedProposedPlanKeys: new Set(),
         nextSyntheticAssistantBlockIndex: -1,
         awaitsTaskIdle: false,
+        observedTaskIds: new Set(),
+        activeTaskIds: new Set(),
       };
 
       const updatedAt = yield* nowIso;
