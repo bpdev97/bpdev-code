@@ -59,7 +59,8 @@ vp test packages/client-runtime/src/tool-calls/index.test.ts \
   apps/web/src/session-logic.test.ts \
   apps/web/src/components/chat/MessagesTimeline.logic.test.ts \
   apps/web/src/components/chat/MessagesTimeline.test.tsx \
-  apps/mobile/src/lib/threadActivity.test.ts
+  apps/mobile/src/lib/threadActivity.test.ts \
+  apps/mobile/src/features/threads/threadFeedLayout.test.ts
 vp check
 vp run typecheck
 vp run lint:mobile

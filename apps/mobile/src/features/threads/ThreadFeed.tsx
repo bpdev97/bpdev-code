@@ -92,6 +92,7 @@ import {
 } from "../../lib/threadActivity";
 import type { ThreadContentPresentation } from "./threadContentPresentation";
 import { ThreadWorkGroupToggle, ThreadWorkLog } from "./thread-work-log";
+import { resolveThreadFeedFixedItemSize } from "./threadFeedLayout";
 import { useMarkdownCodeHighlight } from "./markdownCodeHighlightState";
 import { useAssetUrl } from "../../state/assets";
 import { resolveWorkspaceRelativeFilePath } from "../files/filePath";
@@ -1280,7 +1281,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const disclosureAnchorKeyRef = useRef<string | null>(null);
   const headerMaterialVisibleRef = useRef(false);
   const previousLatestTurnRef = useRef(props.latestTurn);
-  const { width: windowWidth } = useWindowDimensions();
+  const { fontScale, width: windowWidth } = useWindowDimensions();
   const [viewportWidth, setViewportWidth] = useState(() =>
     props.layoutVariant === "split" ? 0 : windowWidth,
   );
@@ -1542,6 +1543,11 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     [shouldRestoreVisibleContentPosition],
   );
 
+  const getFixedFeedItemSize = useCallback(
+    (entry: ThreadFeedEntry) => resolveThreadFeedFixedItemSize(entry, expandedWorkRows, fontScale),
+    [expandedWorkRows, fontScale],
+  );
+
   const onCopyWorkRow = useCallback((rowId: string, value: string) => {
     copyTextWithHaptic(value, {
       target: "thread-work-row",
@@ -1742,6 +1748,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             getItemType={(entry) =>
               entry.type === "message" ? `message:${entry.message.role}` : entry.type
             }
+            getFixedItemSize={getFixedFeedItemSize}
             keyboardShouldPersistTaps="always"
             keyboardDismissMode="none"
             keyboardLiftBehavior="whenAtEnd"
