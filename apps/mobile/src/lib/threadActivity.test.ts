@@ -190,18 +190,95 @@ describe("buildThreadFeed", () => {
       return;
     }
 
-    expect(group.activities).toEqual([
+    expect(group.activities).toMatchObject([
       {
         id: "tool-completed",
         createdAt: "2026-04-01T00:00:02.000Z",
         turnId: "turn-1",
         summary: "Run tests",
         detail: "bun run test",
-        fullDetail: "/bin/zsh -lc 'bun run test'",
-        copyText: "Run tests\nbun run test\n/bin/zsh -lc 'bun run test'",
+        fullDetail: "Run tests\n\nCommand\nbun run test\n\nInvocation\n/bin/zsh -lc 'bun run test'",
         icon: "command",
         toolLike: true,
         status: "success",
+        toolCall: {
+          category: "command",
+          status: "completed",
+          sections: [
+            { kind: "code", title: "Command", content: "bun run test" },
+            {
+              kind: "code",
+              title: "Invocation",
+              content: "/bin/zsh -lc 'bun run test'",
+            },
+          ],
+        },
+      },
+    ]);
+    expect(group.activities[0]?.copyText).toBe(
+      "Run tests\n\nCommand\nbun run test\n\nInvocation\n/bin/zsh -lc 'bun run test'",
+    );
+  });
+
+  it("keeps a Codex command start visible while the command is running", () => {
+    const turnId = TurnId.make("turn-live-command");
+    const thread = makeThread({
+      id: ThreadId.make("thread-live-command"),
+      projectId: ProjectId.make("project-1"),
+      title: "Live command",
+      latestTurn: {
+        turnId,
+        state: "running",
+        requestedAt: "2026-04-01T00:00:00.000Z",
+        startedAt: "2026-04-01T00:00:01.000Z",
+        completedAt: null,
+        assistantMessageId: null,
+      },
+      activities: [
+        makeActivity({
+          id: EventId.make("command-start"),
+          kind: "tool.started",
+          tone: "tool",
+          summary: "Ran command started",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          turnId,
+          payload: {
+            itemId: "command-1",
+            itemType: "command_execution",
+            status: "inProgress",
+            title: "Ran command",
+            data: {
+              item: {
+                id: "command-1",
+                command: "python3 slow-script.py",
+                status: "inProgress",
+              },
+            },
+          },
+        }),
+      ],
+    });
+
+    const feed = deriveThreadFeedPresentation(
+      buildThreadFeed(thread),
+      thread.latestTurn,
+      new Set(),
+    );
+    expect(feed).toMatchObject([
+      {
+        type: "activity-group",
+        activities: [
+          {
+            id: "command-start",
+            summary: "Running command",
+            detail: "python3 slow-script.py",
+            status: "neutral",
+            toolCall: {
+              title: "Running command",
+              status: "inProgress",
+            },
+          },
+        ],
       },
     ]);
   });
@@ -612,13 +689,20 @@ describe("buildThreadFeed", () => {
           activity("activity-neutral", "2026-04-01T00:00:02.000Z", "neutral"),
           activity("activity-2", "2026-04-01T00:00:03.000Z"),
           activity("activity-3", "2026-04-01T00:00:04.000Z"),
+          activity("activity-4", "2026-04-01T00:00:05.000Z"),
+          activity("activity-5", "2026-04-01T00:00:06.000Z"),
         ],
       },
     ];
 
     const collapsed = deriveThreadFeedPresentation(feed, null, new Set());
-    expect(collapsed.map((entry) => entry.id)).toEqual(["activity-3", "work-toggle:work-group-1"]);
-    expect(collapsed[1]).toMatchObject({
+    expect(collapsed.map((entry) => entry.id)).toEqual([
+      "activity-3",
+      "activity-4",
+      "activity-5",
+      "work-toggle:work-group-1",
+    ]);
+    expect(collapsed[3]).toMatchObject({
       type: "work-toggle",
       groupId: "work-group-1",
       hiddenCount: 2,
@@ -630,6 +714,8 @@ describe("buildThreadFeed", () => {
       "activity-1",
       "activity-2",
       "activity-3",
+      "activity-4",
+      "activity-5",
       "work-toggle:work-group-1",
     ]);
     expect(expanded.at(-1)).toMatchObject({

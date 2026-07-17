@@ -2641,11 +2641,13 @@ describe("ProviderRuntimeIngestion", () => {
       createdAt: now,
       threadId: asThreadId("thread-1"),
       turnId: asTurnId("turn-9"),
+      itemId: asItemId("command-9"),
       payload: {
         itemType: "command_execution",
-        status: "in_progress",
+        status: "inProgress",
         title: "Read file",
         detail: "/tmp/file.ts",
+        data: { item: { command: ["sed", "-n", "1,20p", "/tmp/file.ts"] } },
       },
     });
 
@@ -2660,11 +2662,66 @@ describe("ProviderRuntimeIngestion", () => {
     );
 
     expect(thread.session?.status).toBe("ready");
-    expect(
-      thread.activities.some(
-        (activity: ProviderRuntimeTestActivity) => activity.kind === "tool.started",
-      ),
-    ).toBe(true);
+    const activity = thread.activities.find(
+      (entry: ProviderRuntimeTestActivity) => entry.kind === "tool.started",
+    );
+    const payload =
+      activity?.payload && typeof activity.payload === "object"
+        ? (activity.payload as Record<string, unknown>)
+        : undefined;
+    expect(payload).toMatchObject({
+      itemId: "command-9",
+      itemType: "command_execution",
+      status: "inProgress",
+      title: "Read file",
+      data: { item: { command: ["sed", "-n", "1,20p", "/tmp/file.ts"] } },
+    });
+  });
+
+  it("projects tool progress with a stable call id and elapsed time", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    harness.emit({
+      type: "tool.progress",
+      eventId: asEventId("evt-tool-progress"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-progress"),
+      payload: {
+        toolUseId: "tool-use-1",
+        toolName: "Bash",
+        summary: "Running tests",
+        elapsedSeconds: 2.5,
+      },
+    });
+
+    const thread = await waitForThread(harness.readModel, (entry) =>
+      entry.activities.some((activity) => activity.id === "evt-tool-progress"),
+    );
+    const activity = thread.activities.find(
+      (entry: ProviderRuntimeTestActivity) => entry.id === "evt-tool-progress",
+    );
+    const payload =
+      activity?.payload && typeof activity.payload === "object"
+        ? (activity.payload as Record<string, unknown>)
+        : undefined;
+
+    expect(activity).toMatchObject({
+      kind: "tool.progress",
+      tone: "tool",
+      summary: "Running tests",
+    });
+    expect(payload).toMatchObject({
+      itemId: "tool-use-1",
+      toolUseId: "tool-use-1",
+      toolName: "Bash",
+      title: "Bash",
+      status: "inProgress",
+      detail: "Running tests",
+      elapsedSeconds: 2.5,
+    });
   });
 
   it("consumes P1 runtime events into thread metadata, diff checkpoints, and activities", async () => {

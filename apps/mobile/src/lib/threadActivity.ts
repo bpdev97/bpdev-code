@@ -8,6 +8,17 @@ import type {
   UserInputQuestion,
 } from "@t3tools/contracts";
 import {
+  collapseToolLifecycleEntries,
+  DEFAULT_VISIBLE_TOOL_CALL_COUNT,
+  deriveToolCallPresentation,
+  extractToolCallIdentity,
+  isToolLifecycleActivityKind,
+  mergeToolCallPresentations,
+  toolCallHasDetails,
+  type ToolCallPresentation,
+  type ToolCallStatus,
+} from "@t3tools/client-runtime/tool-calls";
+import {
   deriveThreadResponseGrouping,
   type ThreadResponseGrouping,
   type ThreadResponseGroupingEntry,
@@ -58,11 +69,12 @@ export interface ThreadFeedActivity {
     | "zap";
   readonly toolLike: boolean;
   readonly status: "success" | "failure" | "neutral" | null;
+  readonly toolCall?: ToolCallPresentation;
 }
 
-const MAX_VISIBLE_WORK_LOG_ENTRIES = 1;
+const MAX_VISIBLE_WORK_LOG_ENTRIES = DEFAULT_VISIBLE_TOOL_CALL_COUNT;
 
-type WorkLogToolLifecycleStatus = "inProgress" | "completed" | "failed" | "declined" | "stopped";
+type WorkLogToolLifecycleStatus = ToolCallStatus;
 
 interface WorkLogEntry {
   id: string;
@@ -79,11 +91,13 @@ interface WorkLogEntry {
   requestKind?: PendingApproval["requestKind"];
   toolLifecycleStatus?: WorkLogToolLifecycleStatus;
   toolData?: unknown;
+  toolCall?: ToolCallPresentation;
 }
 
 interface DerivedWorkLogEntry extends WorkLogEntry {
   activityKind: OrchestrationThreadActivity["kind"];
   collapseKey?: string;
+  toolCallId?: string;
 }
 
 type RawThreadFeedEntry =
@@ -243,7 +257,6 @@ function deriveWorkLogEntries(
   const ordered = Arr.sort(activities, activityOrder);
   const entries: DerivedWorkLogEntry[] = [];
   for (const activity of ordered) {
-    if (activity.kind === "tool.started") continue;
     if (activity.kind === "task.started") continue;
     if (activity.kind === "context-window.updated") continue;
     if (activity.summary === "Checkpoint captured") continue;
@@ -301,6 +314,7 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   };
   const itemType = extractWorkLogItemType(payload);
   const requestKind = extractWorkLogRequestKind(payload);
+  const toolCallId = isTaskActivity ? null : extractToolCallIdentity(activity.payload);
   if (
     !taskDetailAsLabel &&
     payload &&
@@ -336,12 +350,30 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (requestKind) {
     entry.requestKind = requestKind;
   }
+  if (toolCallId) {
+    entry.toolCallId = toolCallId;
+  }
   let toolLifecycleStatus = extractWorkLogToolLifecycleStatus(payload);
   if (!toolLifecycleStatus && activity.kind === "tool.completed") {
     toolLifecycleStatus = "completed";
   }
   if (toolLifecycleStatus) {
     entry.toolLifecycleStatus = toolLifecycleStatus;
+  }
+  const toolCall = deriveToolCallPresentation({
+    activityKind: activity.kind,
+    summary: activity.summary,
+    payload: activity.payload,
+    ...(commandPreview.command ? { command: commandPreview.command } : {}),
+    ...(commandPreview.rawCommand ? { rawCommand: commandPreview.rawCommand } : {}),
+    ...(entry.detail ? { detail: entry.detail } : {}),
+    ...(changedFiles.length > 0 ? { changedFiles } : {}),
+  });
+  if (toolCall) {
+    entry.toolCall = toolCall;
+    if (!entry.toolCallId && toolCall.callId) {
+      entry.toolCallId = toolCall.callId;
+    }
   }
   const collapseKey = deriveToolLifecycleCollapseKey(entry);
   if (collapseKey) {
@@ -353,32 +385,36 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
 function collapseDerivedWorkLogEntries(
   entries: ReadonlyArray<DerivedWorkLogEntry>,
 ): DerivedWorkLogEntry[] {
-  const collapsed: DerivedWorkLogEntry[] = [];
-  for (const entry of entries) {
-    const previous = collapsed.at(-1);
-    if (previous && shouldCollapseToolLifecycleEntries(previous, entry)) {
-      collapsed[collapsed.length - 1] = mergeDerivedWorkLogEntries(previous, entry);
-      continue;
-    }
-    collapsed.push(entry);
-  }
-  return collapsed;
+  return collapseToolLifecycleEntries(
+    entries,
+    mergeDerivedWorkLogEntries,
+    shouldCollapseToolLifecycleEntries,
+  );
 }
 
 function shouldCollapseToolLifecycleEntries(
   previous: DerivedWorkLogEntry,
   next: DerivedWorkLogEntry,
 ): boolean {
-  if (previous.activityKind !== "tool.updated" && previous.activityKind !== "tool.completed") {
+  if (!isToolLifecycleActivityKind(previous.activityKind)) {
     return false;
   }
-  if (next.activityKind !== "tool.updated" && next.activityKind !== "tool.completed") {
+  if (!isToolLifecycleActivityKind(next.activityKind)) {
     return false;
   }
   if (previous.activityKind === "tool.completed") {
     return false;
   }
-  return previous.collapseKey !== undefined && previous.collapseKey === next.collapseKey;
+  if (previous.collapseKey !== undefined && previous.collapseKey === next.collapseKey) {
+    return true;
+  }
+  return (
+    previous.toolCallId !== undefined &&
+    next.toolCallId === undefined &&
+    previous.itemType === next.itemType &&
+    normalizeCompactToolLabel(previous.toolTitle ?? previous.label) ===
+      normalizeCompactToolLabel(next.toolTitle ?? next.label)
+  );
 }
 
 function mergeDerivedWorkLogEntries(
@@ -395,6 +431,8 @@ function mergeDerivedWorkLogEntries(
   const collapseKey = next.collapseKey ?? previous.collapseKey;
   const toolLifecycleStatus = next.toolLifecycleStatus ?? previous.toolLifecycleStatus;
   const toolData = next.toolData ?? previous.toolData;
+  const toolCallId = next.toolCallId ?? previous.toolCallId;
+  const toolCall = mergeToolCallPresentations(previous.toolCall, next.toolCall);
   return {
     ...previous,
     ...next,
@@ -408,6 +446,8 @@ function mergeDerivedWorkLogEntries(
     ...(collapseKey ? { collapseKey } : {}),
     ...(toolLifecycleStatus ? { toolLifecycleStatus } : {}),
     ...(toolData !== undefined ? { toolData } : {}),
+    ...(toolCallId ? { toolCallId } : {}),
+    ...(toolCall !== undefined ? { toolCall } : {}),
   };
 }
 
@@ -423,8 +463,11 @@ function mergeChangedFiles(
 }
 
 function deriveToolLifecycleCollapseKey(entry: DerivedWorkLogEntry): string | undefined {
-  if (entry.activityKind !== "tool.updated" && entry.activityKind !== "tool.completed") {
+  if (!isToolLifecycleActivityKind(entry.activityKind)) {
     return undefined;
+  }
+  if (entry.toolCallId) {
+    return `tool:${entry.toolCallId}`;
   }
   const normalizedLabel = normalizeCompactToolLabel(entry.toolTitle ?? entry.label);
   const detail = entry.detail?.trim() ?? "";
@@ -440,6 +483,9 @@ function normalizeCompactToolLabel(value: string): string {
 }
 
 function workLogEntryIsToolLike(entry: WorkLogEntry): boolean {
+  if (entry.toolCall !== undefined) {
+    return true;
+  }
   if (entry.tone === "tool" || entry.tone === "thinking" || entry.tone === "error") {
     return true;
   }
@@ -474,7 +520,11 @@ function workEntryIndicatesToolFailure(entry: WorkLogEntry): boolean {
   if (entry.tone === "error") {
     return true;
   }
-  if (entry.toolLifecycleStatus === "failed" || entry.toolLifecycleStatus === "declined") {
+  const status = entry.toolCall?.status ?? entry.toolLifecycleStatus;
+  if (status === "failed" || status === "declined") {
+    return true;
+  }
+  if (entry.toolCall?.exitCode !== undefined && entry.toolCall.exitCode !== 0) {
     return true;
   }
   if (!workLogEntryIsToolLike(entry)) {
@@ -490,11 +540,9 @@ function workEntryIndicatesToolSuccess(entry: WorkLogEntry): boolean {
   if (entry.tone === "thinking") {
     return false;
   }
+  const status = entry.toolCall?.status ?? entry.toolLifecycleStatus;
   return (
-    entry.toolLifecycleStatus !== "inProgress" &&
-    entry.toolLifecycleStatus !== "stopped" &&
-    entry.toolLifecycleStatus !== "failed" &&
-    entry.toolLifecycleStatus !== "declined"
+    status !== "inProgress" && status !== "stopped" && status !== "failed" && status !== "declined"
   );
 }
 
@@ -519,6 +567,12 @@ function workEntryIcon(entry: DerivedWorkLogEntry): ThreadFeedActivity["icon"] {
     return "message";
   }
   if (entry.activityKind === "runtime.warning") return "warning";
+  if (entry.toolCall?.category === "command") return "command";
+  if (entry.toolCall?.category === "file-change") return "edit";
+  if (entry.toolCall?.category === "read" || entry.toolCall?.category === "image") return "eye";
+  if (entry.toolCall?.category === "search" || entry.toolCall?.category === "web") return "globe";
+  if (entry.toolCall?.category === "mcp") return "wrench";
+  if (entry.toolCall?.category === "agent") return "hammer";
   if (entry.requestKind === "command") return "command";
   if (entry.requestKind === "file-read") return "eye";
   if (entry.requestKind === "file-change") return "edit";
@@ -537,6 +591,9 @@ function workEntryIcon(entry: DerivedWorkLogEntry): ThreadFeedActivity["icon"] {
 }
 
 function buildWorkEntryExpandedBody(entry: WorkLogEntry): string | null {
+  if (entry.toolCall && toolCallHasDetails(entry.toolCall)) {
+    return entry.toolCall.copyText;
+  }
   const blocks: string[] = [];
   const appendUniqueBlock = (value: string | null | undefined) => {
     const trimmed = value?.trim();
@@ -1051,7 +1108,12 @@ function appendPresentedFeedEntry(
   }
 
   const activities = entry.activities.filter(
-    (activity) => !(activity.toolLike && activity.status === "neutral"),
+    (activity) =>
+      !(
+        activity.toolLike &&
+        activity.status === "neutral" &&
+        activity.toolCall?.status !== "inProgress"
+      ),
   );
   if (activities.length === 0) {
     return;
@@ -1244,8 +1306,8 @@ export function buildThreadFeed(
           );
         })
         .map<RawThreadFeedEntry>((entry) => {
-          const summary = workEntryHeading(entry);
-          const detail = workEntryPreview(entry);
+          const summary = entry.toolCall?.title ?? workEntryHeading(entry);
+          const detail = entry.toolCall?.preview ?? workEntryPreview(entry);
           const fullDetail = buildWorkEntryExpandedBody(entry);
           return {
             type: "activity",
@@ -1260,13 +1322,16 @@ export function buildThreadFeed(
               detail,
               fullDetail,
               icon: workEntryIcon(entry),
-              copyText: [summary, detail, fullDetail]
-                .filter((value, index, values): value is string => {
-                  return Boolean(value) && values.indexOf(value) === index;
-                })
-                .join("\n"),
+              copyText:
+                entry.toolCall?.copyText ??
+                [summary, detail, fullDetail]
+                  .filter((value, index, values): value is string => {
+                    return Boolean(value) && values.indexOf(value) === index;
+                  })
+                  .join("\n"),
               toolLike: workLogEntryIsToolLike(entry),
               status: workEntryStatus(entry),
+              ...(entry.toolCall ? { toolCall: entry.toolCall } : {}),
             },
           };
         }),

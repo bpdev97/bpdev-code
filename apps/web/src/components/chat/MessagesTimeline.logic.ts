@@ -12,8 +12,9 @@ import {
   type ThreadResponseGrouping,
   type ThreadResponseGroupingEntry,
 } from "@t3tools/shared/threadResponseGrouping";
+import { DEFAULT_VISIBLE_TOOL_CALL_COUNT } from "@t3tools/client-runtime/tool-calls";
 
-export const MAX_VISIBLE_WORK_LOG_ENTRIES = 1;
+export const MAX_VISIBLE_WORK_LOG_ENTRIES = DEFAULT_VISIBLE_TOOL_CALL_COUNT;
 export const TIMELINE_MINIMAP_ITEM_SPACING = 8;
 export const TIMELINE_MINIMAP_MIN_ITEMS = 2;
 export const TIMELINE_MINIMAP_MAX_HEIGHT_CSS = "calc(100vh - 18rem)";
@@ -281,7 +282,8 @@ export function deriveMessagesTimelineRows(input: {
         cursor += 1;
       }
       const visibleGroupedEntries = groupedEntries.filter(
-        (entry) => !workEntryIndicatesToolNeutralStatus(entry),
+        (entry) =>
+          !workEntryIndicatesToolNeutralStatus(entry) || entry.toolCall?.status === "inProgress",
       );
       if (visibleGroupedEntries.length > 0) {
         if (visibleGroupedEntries.length <= MAX_VISIBLE_WORK_LOG_ENTRIES) {
