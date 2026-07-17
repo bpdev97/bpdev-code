@@ -1,10 +1,24 @@
 import * as Haptics from "expo-haptics";
 import { type AppSymbolName, SymbolView } from "../../components/AppSymbol";
-import { LayoutAnimation, Pressable, ScrollView, useColorScheme, View } from "react-native";
+import {
+  Linking,
+  LayoutAnimation,
+  Pressable,
+  ScrollView,
+  useColorScheme,
+  View,
+} from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
 import { cn } from "../../lib/cn";
 import type { ThreadFeedActivity } from "../../lib/threadActivity";
+import {
+  formatToolCallDuration,
+  toolCallHasDetails,
+  toolCallSectionText,
+  type ToolCallDetailSection,
+  type ToolCallPresentation,
+} from "@t3tools/client-runtime/tool-calls";
 import Animated, { FadeIn } from "react-native-reanimated";
 
 const WORK_LOG_LAYOUT_ANIMATION = {
@@ -77,6 +91,100 @@ function isFreshRow(createdAt: string): boolean {
   return Number.isFinite(timestamp) && Date.now() - timestamp < FRESH_ROW_WINDOW_MS;
 }
 
+function ToolCallSection(props: { readonly section: ToolCallDetailSection }) {
+  const { section } = props;
+  return (
+    <View className="gap-1">
+      <Text className="font-t3-medium text-3xs uppercase tracking-wide text-foreground-muted opacity-70">
+        {section.title}
+        {"truncated" in section && section.truncated ? " · truncated" : ""}
+      </Text>
+      {section.kind === "files" ? (
+        <View className="gap-1.5">
+          {section.files.map((file) => (
+            <View key={file.path} className="gap-1">
+              <View className="flex-row items-center gap-2 rounded-md bg-neutral-500/[0.06] px-2 py-1.5 dark:bg-white/[0.05]">
+                <Text selectable className="min-w-0 flex-1 font-mono text-2xs text-foreground">
+                  {file.path}
+                </Text>
+                {file.change ? (
+                  <Text className="shrink-0 text-3xs text-foreground-muted">{file.change}</Text>
+                ) : null}
+              </View>
+              {file.diff ? (
+                <ScrollView
+                  nestedScrollEnabled
+                  directionalLockEnabled
+                  showsVerticalScrollIndicator
+                  className="max-h-56 rounded-md bg-neutral-500/[0.06] dark:bg-black/20"
+                  contentContainerStyle={{ padding: 8 }}
+                >
+                  <Text
+                    selectable
+                    className="font-mono text-3xs leading-normal text-foreground-muted"
+                  >
+                    {file.diff}
+                  </Text>
+                </ScrollView>
+              ) : null}
+            </View>
+          ))}
+        </View>
+      ) : section.kind === "links" ? (
+        <View className="gap-1">
+          {section.links.map((link) => (
+            <Pressable
+              key={link.url}
+              accessibilityRole="link"
+              onPress={() => void Linking.openURL(link.url)}
+              className="min-h-11 justify-center rounded-md bg-neutral-500/[0.06] px-2 dark:bg-white/[0.05]"
+            >
+              <Text className="text-2xs text-foreground underline" numberOfLines={2}>
+                {link.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : (
+        <ScrollView
+          nestedScrollEnabled
+          directionalLockEnabled
+          showsVerticalScrollIndicator
+          className="max-h-56 rounded-md bg-neutral-500/[0.06] dark:bg-black/20"
+          contentContainerStyle={{ padding: 8 }}
+        >
+          <Text selectable className="font-mono text-3xs leading-normal text-foreground-muted">
+            {toolCallSectionText(section)}
+          </Text>
+        </ScrollView>
+      )}
+    </View>
+  );
+}
+
+function ToolCallDetails(props: { readonly toolCall: ToolCallPresentation }) {
+  const metadata = [
+    props.toolCall.cwd ? `cwd ${props.toolCall.cwd}` : null,
+    props.toolCall.exitCode !== undefined ? `exit ${props.toolCall.exitCode}` : null,
+    props.toolCall.durationMs !== undefined
+      ? formatToolCallDuration(props.toolCall.durationMs)
+      : null,
+  ].filter((value): value is string => value !== null);
+
+  return (
+    <View className="gap-3">
+      {metadata.length > 0 ? (
+        <Text selectable className="font-mono text-3xs text-foreground-muted opacity-75">
+          {metadata.join("  ·  ")}
+        </Text>
+      ) : null}
+      {props.toolCall.sections.map((section) => (
+        <ToolCallSection key={`${section.kind}:${section.title}`} section={section} />
+      ))}
+    </View>
+  );
+}
+
 export function ThreadWorkLog(props: {
   readonly activities: ReadonlyArray<ThreadFeedActivity>;
   readonly copiedRowId: string | null;
@@ -88,7 +196,14 @@ export function ThreadWorkLog(props: {
   const colorScheme = useColorScheme();
   const pressedBackground = colorScheme === "dark" ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.035)";
   const rows = props.activities
-    .filter((activity) => !(activity.toolLike && activity.status === "neutral"))
+    .filter(
+      (activity) =>
+        !(
+          activity.toolLike &&
+          activity.status === "neutral" &&
+          activity.toolCall?.status !== "inProgress"
+        ),
+    )
     .map((activity) => ({ ...activity, detail: compactActivityDetail(activity.detail) }));
 
   if (rows.length === 0) {
@@ -108,7 +223,9 @@ export function ThreadWorkLog(props: {
       <View className="gap-px">
         {rows.map((row) => {
           const expanded = props.expandedRows[row.id] ?? false;
-          const canExpand = row.fullDetail !== null;
+          const canExpand =
+            row.fullDetail !== null ||
+            (row.toolCall !== undefined && toolCallHasDetails(row.toolCall));
           const displayText = row.detail ? `${row.summary} ${row.detail}` : row.summary;
           const iconIsDestructive = row.icon === "alert" || row.icon === "warning";
 
@@ -139,7 +256,7 @@ export function ThreadWorkLog(props: {
                 })}
                 className="rounded-md px-0.5 py-0"
               >
-                <View className="min-h-8 flex-row items-center gap-1.5">
+                <View className="min-h-11 flex-row items-center gap-1.5">
                   <View className="h-[18px] w-5 shrink-0 items-center justify-center">
                     <SymbolView
                       name={workRowSymbolName(row.icon)}
@@ -192,7 +309,9 @@ export function ThreadWorkLog(props: {
                               ? { ios: "xmark", android: "close" }
                               : row.status === "success"
                                 ? { ios: "checkmark", android: "check" }
-                                : { ios: "minus", android: "remove" }
+                                : row.toolCall?.status === "inProgress"
+                                  ? { ios: "ellipsis", android: "more_horiz" }
+                                  : { ios: "minus", android: "remove" }
                           }
                           size={11}
                           tintColor={row.status === "failure" ? "#e11d48" : props.iconSubtleColor}
@@ -204,22 +323,26 @@ export function ThreadWorkLog(props: {
                 </View>
               </Pressable>
 
-              {expanded && row.fullDetail ? (
+              {expanded && canExpand ? (
                 <View className="ml-7 border-l border-neutral-300/60 pb-1 pl-3 pt-0.5 dark:border-white/[0.12]">
-                  <ScrollView
-                    nestedScrollEnabled
-                    directionalLockEnabled
-                    showsVerticalScrollIndicator
-                    className="max-h-60"
-                    contentContainerStyle={{ paddingRight: 8 }}
-                  >
-                    <Text
-                      selectable
-                      className="font-mono text-2xs leading-normal text-foreground-muted"
+                  {row.toolCall ? (
+                    <ToolCallDetails toolCall={row.toolCall} />
+                  ) : row.fullDetail ? (
+                    <ScrollView
+                      nestedScrollEnabled
+                      directionalLockEnabled
+                      showsVerticalScrollIndicator
+                      className="max-h-60"
+                      contentContainerStyle={{ paddingRight: 8 }}
                     >
-                      {row.fullDetail}
-                    </Text>
-                  </ScrollView>
+                      <Text
+                        selectable
+                        className="font-mono text-2xs leading-normal text-foreground-muted"
+                      >
+                        {row.fullDetail}
+                      </Text>
+                    </ScrollView>
+                  ) : null}
                 </View>
               ) : null}
             </Animated.View>
@@ -265,7 +388,7 @@ export function ThreadWorkGroupToggle(props: {
         style={({ pressed }) => ({
           backgroundColor: pressed ? pressedBackground : "transparent",
         })}
-        className="min-h-8 flex-row items-center gap-1.5 rounded-md px-0.5 py-0"
+        className="min-h-11 flex-row items-center gap-1.5 rounded-md px-0.5 py-0"
       >
         <View className="h-[18px] w-5 items-center justify-center">
           <SymbolView

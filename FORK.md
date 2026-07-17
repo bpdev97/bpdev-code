@@ -61,6 +61,7 @@ feature.
 | `FORK-PUSH-001`   | Tailnet APNs notification and Live Activity relay | Active               | [`docs/fork/personal-push-relay.md`](docs/fork/personal-push-relay.md)             | `vp test apps/push-relay/src apps/server/src/personalPush apps/server/src/serverSettings.test.ts apps/server/src/relay/AgentAwarenessRelay.test.ts apps/mobile/src/features/agent-awareness/remoteRegistration.test.ts packages/contracts/src/settings.test.ts`                                                                                                                                                                                    |
 | `FORK-CODEX-001`  | Codex MCP tool approval prompts                   | Active, temporary    | [`docs/fork/codex-mcp-tool-approvals.md`](docs/fork/codex-mcp-tool-approvals.md)   | `vp test apps/server/src/provider/CodexMcpApproval.test.ts apps/server/src/provider/Layers/CodexAdapter.test.ts apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.test.ts apps/web/src/session-logic.test.ts apps/mobile/src/lib/threadActivity.test.ts`                                                                                                                                                                               |
 | `FORK-CODEX-002`  | Codex automatic approval reviewer                 | Active, temporary    | [`docs/fork/codex-auto-review.md`](docs/fork/codex-auto-review.md)                 | `vp test apps/server/src/codexModelOptions.test.ts apps/server/src/provider/Layers/CodexProvider.test.ts apps/server/src/provider/Layers/CodexAdapter.test.ts apps/server/src/provider/Layers/CodexSessionRuntime.test.ts`                                                                                                                                                                                                                         |
+| `FORK-TOOLS-001`  | Structured tool-call presentation                 | Active               | [`docs/fork/tool-call-presentation.md`](docs/fork/tool-call-presentation.md)       | `vp test packages/client-runtime/src/tool-calls/index.test.ts apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.test.ts apps/web/src/session-logic.test.ts apps/web/src/components/chat/MessagesTimeline.logic.test.ts apps/web/src/components/chat/MessagesTimeline.test.tsx apps/mobile/src/lib/threadActivity.test.ts`                                                                                                              |
 
 ### FORK-CLAUDE-001 ownership map
 
@@ -120,6 +121,34 @@ The setting is a Codex model option so the existing provider-specific controls r
 mobile without widening the shared runtime modes. Preserve the `user` default and pass the selected
 reviewer on thread start, resume, and subsequent turns. Remove this feature when upstream T3 exposes
 Codex `approvalsReviewer` with equivalent per-thread persistence and web/mobile controls.
+
+### FORK-TOOLS-001 ownership map
+
+Fork-owned paths:
+
+- `packages/client-runtime/src/tool-calls/`
+- `docs/fork/tool-call-presentation.md`
+
+Shared upstream touchpoints containing the additive projection and platform renderers:
+
+- `packages/client-runtime/package.json`
+- `apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts`
+- `apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.test.ts`
+- `apps/web/src/session-logic.ts`
+- `apps/web/src/session-logic.test.ts`
+- `apps/web/src/components/chat/MessagesTimeline.tsx`
+- `apps/web/src/components/chat/ToolCallDetails.tsx`
+- `apps/web/src/components/chat/MessagesTimeline.logic.ts`
+- `apps/web/src/components/chat/MessagesTimeline.logic.test.ts`
+- `apps/mobile/src/lib/threadActivity.ts`
+- `apps/mobile/src/lib/threadActivity.test.ts`
+- `apps/mobile/src/features/threads/thread-work-log.tsx`
+
+Keep provider payload decoding and lifecycle merging in `@t3tools/client-runtime/tool-calls`; web and
+mobile should remain thin renderers over the same presentation model. Preserve stable item IDs and
+untruncated provider data in orchestration activities, while bounding only the rendered sections.
+Remove this patch when upstream provides equivalent cross-provider lifecycle correlation and
+structured, responsive detail views on both clients.
 
 ### FORK-PUSH-001 ownership map
 

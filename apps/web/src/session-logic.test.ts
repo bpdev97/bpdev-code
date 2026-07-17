@@ -719,7 +719,7 @@ describe("workEntryIndicatesToolFailure", () => {
 });
 
 describe("deriveWorkLogEntries", () => {
-  it("omits tool started entries and keeps completed entries", () => {
+  it("collapses matching tool starts into their completed row", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
         id: "tool-complete",
@@ -737,6 +737,86 @@ describe("deriveWorkLogEntries", () => {
 
     const entries = deriveWorkLogEntries(activities);
     expect(entries.map((entry) => entry.id)).toEqual(["tool-complete"]);
+  });
+
+  it("keeps live tool calls visible and correlates non-adjacent lifecycle updates", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "tool-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        summary: "Run tests started",
+        kind: "tool.started",
+        payload: {
+          itemId: "command-1",
+          itemType: "command_execution",
+          status: "inProgress",
+          title: "Run tests",
+          data: { item: { command: ["vp", "test"], cwd: "/workspace" } },
+        },
+      }),
+      makeActivity({
+        id: "warning",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        summary: "Connection is slow",
+        kind: "runtime.warning",
+        tone: "info",
+      }),
+      makeActivity({
+        id: "tool-progress",
+        createdAt: "2026-02-23T00:00:03.000Z",
+        summary: "Still running",
+        kind: "tool.progress",
+        payload: {
+          itemId: "command-1",
+          status: "inProgress",
+          elapsedSeconds: 2,
+          detail: "Still running",
+        },
+      }),
+    ];
+
+    const liveEntries = deriveWorkLogEntries(activities);
+    expect(liveEntries.map((entry) => entry.id)).toEqual(["warning", "tool-progress"]);
+    expect(liveEntries[1]).toMatchObject({
+      toolLifecycleStatus: "inProgress",
+      toolCall: {
+        callId: "command-1",
+        category: "command",
+        title: "Run tests",
+        status: "inProgress",
+        cwd: "/workspace",
+        durationMs: 2000,
+        sections: [expect.objectContaining({ title: "Command", content: "vp test" })],
+      },
+    });
+
+    const completedEntries = deriveWorkLogEntries([
+      ...activities,
+      makeActivity({
+        id: "tool-complete",
+        createdAt: "2026-02-23T00:00:04.000Z",
+        summary: "Run tests",
+        kind: "tool.completed",
+        payload: {
+          itemId: "command-1",
+          itemType: "command_execution",
+          status: "completed",
+          title: "Run tests",
+          data: { item: { aggregatedOutput: "All tests passed", exitCode: 0 } },
+        },
+      }),
+    ]);
+    expect(completedEntries.map((entry) => entry.id)).toEqual(["warning", "tool-complete"]);
+    expect(completedEntries[1]?.toolCall).toMatchObject({
+      callId: "command-1",
+      status: "completed",
+      cwd: "/workspace",
+      exitCode: 0,
+      sections: [
+        expect.objectContaining({ title: "Command", content: "vp test" }),
+        expect.objectContaining({ title: "Output", content: "All tests passed" }),
+      ],
+    });
   });
 
   it("omits task.started but shows task.progress and task.completed", () => {

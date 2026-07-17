@@ -1132,6 +1132,47 @@ describe("deriveMessagesTimelineRows", () => {
     expect(assistantRow?.showAssistantCopyButton).toBe(false);
   });
 
+  it("renders an in-progress tool start alongside the working indicator", () => {
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          id: "tool-start-entry",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:02Z",
+          entry: {
+            id: "tool-start",
+            createdAt: "2026-01-01T00:00:02Z",
+            turnId: "turn-1" as never,
+            label: "Ran command started",
+            tone: "tool",
+            toolCall: {
+              callId: "command-1",
+              category: "command",
+              title: "Running command",
+              preview: "python3 slow-script.py",
+              status: "inProgress",
+              sections: [],
+              copyText: "Running command",
+            },
+          },
+        },
+      ],
+      latestTurn: {
+        turnId: "turn-1" as never,
+        state: "running",
+        startedAt: "2026-01-01T00:00:00Z",
+        completedAt: null,
+      },
+      runningTurnId: "turn-1" as never,
+      isWorking: true,
+      activeTurnStartedAt: "2026-01-01T00:00:00Z",
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    expect(rows.map((row) => row.id)).toEqual(["tool-start-entry", "working-indicator-row"]);
+  });
+
   it("models work log overflow expansion as inserted list rows", () => {
     const timelineEntries = [
       {
@@ -1170,6 +1211,30 @@ describe("deriveMessagesTimelineRows", () => {
           tone: "tool" as const,
         },
       },
+      {
+        id: "work-entry-4",
+        kind: "work" as const,
+        createdAt: "2026-01-01T00:00:04Z",
+        entry: {
+          id: "work-4",
+          createdAt: "2026-01-01T00:00:04Z",
+          label: "check",
+          detail: "Checking types",
+          tone: "tool" as const,
+        },
+      },
+      {
+        id: "work-entry-5",
+        kind: "work" as const,
+        createdAt: "2026-01-01T00:00:05Z",
+        entry: {
+          id: "work-5",
+          createdAt: "2026-01-01T00:00:05Z",
+          label: "build",
+          detail: "Building app",
+          tone: "tool" as const,
+        },
+      },
     ];
 
     const baseInput = {
@@ -1185,7 +1250,12 @@ describe("deriveMessagesTimelineRows", () => {
       expandedWorkGroupIds: new Set(["work-group:work-entry-1"]),
     });
 
-    expect(collapsedRows.map((row) => row.id)).toEqual(["work-3", "work-toggle:work-entry-1"]);
+    expect(collapsedRows.map((row) => row.id)).toEqual([
+      "work-3",
+      "work-4",
+      "work-5",
+      "work-toggle:work-entry-1",
+    ]);
     expect(collapsedRows.find((row) => row.kind === "work-toggle")).toMatchObject({
       groupId: "work-group:work-entry-1",
       hiddenCount: 2,
@@ -1196,6 +1266,8 @@ describe("deriveMessagesTimelineRows", () => {
       "work-1",
       "work-2",
       "work-3",
+      "work-4",
+      "work-5",
       "work-toggle:work-entry-1",
     ]);
     expect(expandedRows.find((row) => row.kind === "work-toggle")).toMatchObject({
