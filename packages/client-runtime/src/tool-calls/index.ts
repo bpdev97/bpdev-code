@@ -1,10 +1,15 @@
 import type { ToolLifecycleItemType } from "@t3tools/contracts";
+import { boundToolActivityData } from "@t3tools/shared/toolActivity";
 
 export const DEFAULT_VISIBLE_TOOL_CALL_COUNT = 3;
 
 const MAX_SECTION_CHARACTERS = 32_000;
 const MAX_FILES = 50;
 const MAX_LINKS = 12;
+const MAX_SEARCH_QUERIES = 20;
+const MAX_TRAVERSAL_NODES = 2_000;
+const MAX_ACP_CONTENT_BLOCKS = 20;
+const MAX_TERMINAL_IDS = 20;
 
 export type ToolCallCategory =
   | "command"
@@ -195,7 +200,7 @@ function formatCommand(value: unknown): string | null {
   const direct = asString(value);
   if (direct) return direct;
   if (!Array.isArray(value)) return null;
-  const parts = value.flatMap((part) => {
+  const parts = value.slice(0, 100).flatMap((part) => {
     const string = asString(part);
     if (!string) return [];
     return /[\s"'`]/u.test(string) ? [`"${string.replaceAll('"', '\\"')}"`] : [string];
@@ -214,22 +219,38 @@ function limitText(value: string): LimitedText {
   };
 }
 
-function safeStringify(value: unknown): string {
+function safeStringify(value: unknown): LimitedText {
   try {
-    const serialized = JSON.stringify(value, null, 2);
-    return serialized ?? String(value);
+    const bounded = boundToolActivityData(value, {
+      maxDepth: 8,
+      maxEntriesPerCollection: 100,
+      maxNodes: 1_000,
+      maxStringCharacters: MAX_SECTION_CHARACTERS,
+      maxTotalCharacters: MAX_SECTION_CHARACTERS,
+      maxSerializedBytes: MAX_SECTION_CHARACTERS * 2,
+    });
+    const serialized = JSON.stringify(
+      bounded.truncation ? { data: bounded.value, truncation: bounded.truncation } : bounded.value,
+      null,
+      2,
+    );
+    return {
+      text: serialized ?? String(bounded.value),
+      truncated: bounded.truncation !== undefined,
+    };
   } catch {
-    return String(value);
+    return { text: "… tool payload could not be rendered …", truncated: true };
   }
 }
 
 function jsonSection(title: string, value: unknown): ToolCallDetailSection {
-  const limited = limitText(safeStringify(value));
+  const serialized = safeStringify(value);
+  const limited = limitText(serialized.text);
   return {
     kind: "json",
     title,
     content: limited.text,
-    ...(limited.truncated ? { truncated: true } : {}),
+    ...(serialized.truncated || limited.truncated ? { truncated: true } : {}),
   };
 }
 
@@ -335,15 +356,41 @@ function categoryFromInput(input: {
   return "other";
 }
 
-function collectSearchQueries(value: unknown, queries: Map<string, string>, depth = 0): void {
-  if (depth > 3 || value === null || value === undefined) return;
+interface TraversalBudget {
+  remainingNodes: number;
+}
+
+function visitWithinBudget(budget: TraversalBudget): boolean {
+  if (budget.remainingNodes <= 0) return false;
+  budget.remainingNodes -= 1;
+  return true;
+}
+
+function collectSearchQueries(
+  value: unknown,
+  queries: Map<string, string>,
+  depth = 0,
+  budget: TraversalBudget = { remainingNodes: MAX_TRAVERSAL_NODES },
+): void {
+  if (
+    depth > 3 ||
+    queries.size >= MAX_SEARCH_QUERIES ||
+    value === null ||
+    value === undefined ||
+    !visitWithinBudget(budget)
+  ) {
+    return;
+  }
   const direct = asString(value);
   if (direct) {
     queries.set(direct.toLowerCase(), direct);
     return;
   }
   if (Array.isArray(value)) {
-    for (const entry of value) collectSearchQueries(entry, queries, depth + 1);
+    for (const entry of value) {
+      if (queries.size >= MAX_SEARCH_QUERIES || budget.remainingNodes <= 0) break;
+      collectSearchQueries(entry, queries, depth + 1, budget);
+    }
     return;
   }
   const record = asRecord(value);
@@ -357,7 +404,7 @@ function collectSearchQueries(value: unknown, queries: Map<string, string>, dept
     "pattern",
     "term",
   ] as const) {
-    if (record[key] !== undefined) collectSearchQueries(record[key], queries, depth + 1);
+    if (record[key] !== undefined) collectSearchQueries(record[key], queries, depth + 1, budget);
   }
 }
 
@@ -373,10 +420,26 @@ function isToolLifecycleItemType(value: unknown): value is ToolLifecycleItemType
   );
 }
 
-function collectFiles(value: unknown, files: Map<string, ToolCallFile>, depth = 0): void {
-  if (depth > 4 || files.size >= MAX_FILES || value === null || value === undefined) return;
+function collectFiles(
+  value: unknown,
+  files: Map<string, ToolCallFile>,
+  depth = 0,
+  budget: TraversalBudget = { remainingNodes: MAX_TRAVERSAL_NODES },
+): void {
+  if (
+    depth > 4 ||
+    files.size >= MAX_FILES ||
+    value === null ||
+    value === undefined ||
+    !visitWithinBudget(budget)
+  ) {
+    return;
+  }
   if (Array.isArray(value)) {
-    for (const entry of value) collectFiles(entry, files, depth + 1);
+    for (const entry of value) {
+      if (files.size >= MAX_FILES || budget.remainingNodes <= 0) break;
+      collectFiles(entry, files, depth + 1, budget);
+    }
     return;
   }
   const record = asRecord(value);
@@ -395,14 +458,30 @@ function collectFiles(value: unknown, files: Map<string, ToolCallFile>, depth = 
   }
 
   for (const key of ["changes", "files", "locations"] as const) {
-    if (record[key] !== undefined) collectFiles(record[key], files, depth + 1);
+    if (record[key] !== undefined) collectFiles(record[key], files, depth + 1, budget);
   }
 }
 
-function collectLinks(value: unknown, links: Map<string, ToolCallLink>, depth = 0): void {
-  if (depth > 4 || links.size >= MAX_LINKS || value === null || value === undefined) return;
+function collectLinks(
+  value: unknown,
+  links: Map<string, ToolCallLink>,
+  depth = 0,
+  budget: TraversalBudget = { remainingNodes: MAX_TRAVERSAL_NODES },
+): void {
+  if (
+    depth > 4 ||
+    links.size >= MAX_LINKS ||
+    value === null ||
+    value === undefined ||
+    !visitWithinBudget(budget)
+  ) {
+    return;
+  }
   if (Array.isArray(value)) {
-    for (const entry of value) collectLinks(entry, links, depth + 1);
+    for (const entry of value) {
+      if (links.size >= MAX_LINKS || budget.remainingNodes <= 0) break;
+      collectLinks(entry, links, depth + 1, budget);
+    }
     return;
   }
   const record = asRecord(value);
@@ -418,11 +497,28 @@ function collectLinks(value: unknown, links: Map<string, ToolCallLink>, depth = 
     }
   }
 
-  for (const [key, child] of Object.entries(record)) {
-    if (["result", "results", "content", "links", "sources", "items"].includes(key)) {
-      collectLinks(child, links, depth + 1);
+  for (const key in record) {
+    if (links.size >= MAX_LINKS || budget.remainingNodes <= 0) break;
+    if (
+      Object.hasOwn(record, key) &&
+      ["result", "results", "content", "links", "sources", "items"].includes(key)
+    ) {
+      collectLinks(record[key], links, depth + 1, budget);
     }
   }
+}
+
+function payloadTruncationNotice(value: unknown): string | null {
+  const truncation = asRecord(value);
+  if (truncation?.truncated !== true) return null;
+  const reasons = Array.isArray(truncation.reasons)
+    ? truncation.reasons
+        .flatMap((reason) => (typeof reason === "string" ? [reason] : []))
+        .slice(0, 8)
+    : [];
+  return reasons.length > 0
+    ? `Provider diagnostics were truncated before persistence (${reasons.join(", ")}).`
+    : "Provider diagnostics were truncated before persistence.";
 }
 
 function collectAcpContent(
@@ -432,10 +528,16 @@ function collectAcpContent(
   links: Map<string, ToolCallLink>,
   terminals: string[],
   depth = 0,
+  budget: TraversalBudget = { remainingNodes: MAX_TRAVERSAL_NODES },
 ): void {
-  if (depth > 5 || value === null || value === undefined) return;
+  if (depth > 5 || value === null || value === undefined || !visitWithinBudget(budget)) {
+    return;
+  }
   if (Array.isArray(value)) {
-    for (const entry of value) collectAcpContent(entry, text, files, links, terminals, depth + 1);
+    for (const entry of value) {
+      if (budget.remainingNodes <= 0) break;
+      collectAcpContent(entry, text, files, links, terminals, depth + 1, budget);
+    }
     return;
   }
   const record = asRecord(value);
@@ -454,7 +556,7 @@ function collectAcpContent(
   }
   if (type === "terminal") {
     const terminalId = firstString(record.terminalId);
-    if (terminalId) terminals.push(terminalId);
+    if (terminalId && terminals.length < MAX_TERMINAL_IDS) terminals.push(terminalId);
     return;
   }
   if (type === "resource_link") {
@@ -465,12 +567,12 @@ function collectAcpContent(
     return;
   }
   if (type === "content") {
-    collectAcpContent(record.content, text, files, links, terminals, depth + 1);
+    collectAcpContent(record.content, text, files, links, terminals, depth + 1, budget);
     return;
   }
   if (type === "text") {
     const content = asString(record.text);
-    if (content) text.push(content);
+    if (content && text.length < MAX_ACP_CONTENT_BLOCKS) text.push(limitText(content).text);
   }
 }
 
@@ -482,7 +584,7 @@ function extractTextContent(value: unknown): string | null {
     return firstString(record.content, record.text, record.output, record.stdout);
   }
   if (!Array.isArray(value)) return null;
-  const chunks = value.flatMap((entry) => {
+  const chunks = value.slice(0, 100).flatMap((entry) => {
     const item = asRecord(entry);
     const text = firstString(item?.text, item?.content);
     return text ? [text] : [];
@@ -500,7 +602,7 @@ function firstLine(value: string): string | null {
 }
 
 function compactJson(value: unknown): string | null {
-  const text = safeStringify(value).replace(/\s+/gu, " ").trim();
+  const text = safeStringify(value).text.replace(/\s+/gu, " ").trim();
   if (text.length === 0 || text === "{}" || text === "[]") return null;
   return text.length <= 120 ? text : `${text.slice(0, 119).trimEnd()}…`;
 }
@@ -754,6 +856,12 @@ export function deriveToolCallPresentation(
     item.result ?? data.result ?? (category === "mcp" ? data.rawOutput : undefined);
 
   const sections: ToolCallDetailSection[] = [];
+  appendTextSection(
+    sections,
+    "text",
+    "Payload notice",
+    payloadTruncationNotice(payload.dataTruncation),
+  );
   appendTextSection(sections, "code", "Command", command, "shell");
   appendTextSection(sections, "code", "Invocation", rawCommand, "shell");
   if (searchQueries.size > 0) {

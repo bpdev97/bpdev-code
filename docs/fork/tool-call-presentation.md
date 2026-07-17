@@ -10,8 +10,9 @@ structured sections with platform-native components.
 The data flow is:
 
 1. Provider adapters normalize Codex, ACP, and Claude events into canonical runtime item events.
-2. Runtime ingestion preserves `itemId`, lifecycle status, title, detail, and the provider data on
-   started, updated, and completed activities. `tool.progress` is projected as an in-progress
+2. Runtime ingestion preserves `itemId`, lifecycle status, title, detail, and a bounded JSON-safe
+   copy of provider data on started, updated, and completed activities. When data is reduced, the
+   activity includes `dataTruncation` metadata. `tool.progress` is projected as an in-progress
    activity using the provider item or tool-use ID.
 3. `@t3tools/client-runtime/tool-calls` decodes the provider payload into a
    `ToolCallPresentation`. It owns category detection, lifecycle status, command metadata, search
@@ -26,11 +27,20 @@ Claude-specific decoding to either UI.
 
 ## Performance and failure behavior
 
-- Provider data stored in the orchestration activity remains lossless.
+- Provider data is bounded before the append-only orchestration event is written: depth, collection
+  fan-out, node count, individual strings, aggregate characters, and serialized bytes all have
+  limits. Long strings retain both ends, and `dataTruncation` records the reasons plus omitted
+  counts so partial diagnostics are never mistaken for lossless output.
 - Individual rendered text sections are bounded to 32,000 characters by retaining their beginning
   and end. This prevents a large command result from locking either client while keeping useful
   failure context.
-- A presentation collects at most 50 files and 12 links.
+- Client-side fallback JSON serialization applies its own bounded copy before `JSON.stringify`, so
+  legacy or locally constructed activities cannot bypass the ingestion limit. Recursive collectors
+  use node budgets; a presentation collects at most 20 search queries, 50 files, 12 links, 20 ACP
+  content blocks, and 20 terminal IDs.
+- Projection snapshots and targeted thread detail queries return the latest 500 activities per
+  thread, matching the in-memory projector. The projection table remains rebuildable history for
+  shell-summary derivations, while reconnect payloads cannot grow without bound.
 - Three recent work-log rows remain visible before the existing disclosure folds older work.
 - Unknown tool shapes fall back to a bounded JSON details section instead of disappearing.
 - Explicit lifecycle status and exit code win over text heuristics. Legacy activities still use the
@@ -43,19 +53,22 @@ related tool presentation.
 
 ## Upstream sync checklist
 
-1. Preserve the extra lifecycle payload fields when resolving ingestion conflicts.
+1. Preserve the extra lifecycle payload fields and pre-persistence bounding when resolving
+   ingestion conflicts.
 2. Keep `packages/client-runtime/src/tool-calls/` provider-neutral and free of React or React Native
    dependencies.
 3. Reapply platform rendering as small components rather than copying the projector into either app.
 4. Confirm in-progress calls remain visible and completed calls replace their earlier lifecycle rows.
-5. Check large command output, file diffs, MCP arguments/results, and unknown-provider fallback on a
-   narrow mobile viewport and desktop.
+5. Check large command output, file diffs, MCP arguments/results, unknown-provider fallback, and the
+   explicit payload-truncation notice on a narrow mobile viewport and desktop.
 
 ## Verification
 
 ```sh
-vp test packages/client-runtime/src/tool-calls/index.test.ts \
+vp test packages/shared/src/toolActivity.test.ts \
+  packages/client-runtime/src/tool-calls/index.test.ts \
   apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.test.ts \
+  apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.test.ts \
   apps/web/src/session-logic.test.ts \
   apps/web/src/components/chat/MessagesTimeline.logic.test.ts \
   apps/web/src/components/chat/MessagesTimeline.test.tsx \

@@ -374,6 +374,71 @@ describe("deriveToolCallPresentation", () => {
     expect(output ? toolCallSectionText(output) : "").toMatch(/^start-/u);
     expect(output ? toolCallSectionText(output) : "").toMatch(/-end$/u);
   });
+
+  it("renders circular JSON with an explicit bounded diagnostic marker", () => {
+    const input: Record<string, unknown> = { path: "/workspace/app.ts" };
+    input.self = input;
+    const presentation = deriveToolCallPresentation({
+      activityKind: "tool.completed",
+      summary: "Custom tool",
+      payload: {
+        itemId: "custom-1",
+        itemType: "dynamic_tool_call",
+        data: { toolName: "Custom", input },
+      },
+    });
+    const section = presentation?.sections.find((candidate) => candidate.title === "Input");
+
+    expect(section).toMatchObject({ kind: "json", truncated: true });
+    expect(section ? toolCallSectionText(section) : "").toContain("circular-reference");
+  });
+
+  it("caps recursive search-query collection", () => {
+    const presentation = deriveToolCallPresentation({
+      activityKind: "tool.started",
+      summary: "WebSearch started",
+      payload: {
+        itemId: "search-many",
+        itemType: "dynamic_tool_call",
+        data: {
+          toolName: "WebSearch",
+          input: {
+            search_query: Array.from({ length: 10_000 }, (_, index) => ({ q: `query-${index}` })),
+          },
+        },
+      },
+    });
+
+    expect(presentation?.preview).toBe("query-0 +19 more");
+    expect(
+      presentation?.sections.find((candidate) => candidate.title === "Search queries"),
+    ).toMatchObject({
+      kind: "text",
+      content: Array.from({ length: 20 }, (_, index) => `query-${index}`).join("\n"),
+    });
+  });
+
+  it("explains server-side payload truncation in the shared presentation", () => {
+    const presentation = deriveToolCallPresentation({
+      activityKind: "tool.completed",
+      summary: "Ran command",
+      payload: {
+        itemId: "command-truncated",
+        itemType: "command_execution",
+        data: { command: "vp test" },
+        dataTruncation: {
+          truncated: true,
+          reasons: ["string-size", "collection-size"],
+        },
+      },
+    });
+
+    expect(presentation?.sections[0]).toMatchObject({
+      kind: "text",
+      title: "Payload notice",
+      content: expect.stringContaining("string-size, collection-size"),
+    });
+  });
 });
 
 describe("mergeToolCallPresentations", () => {
