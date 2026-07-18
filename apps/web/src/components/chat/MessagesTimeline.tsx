@@ -1889,7 +1889,7 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
     return "globe";
   }
   if (workEntry.toolCall?.category === "mcp") return "wrench";
-  if (workEntry.toolCall?.category === "agent") return "hammer";
+  if (workEntry.toolCall?.category === "agent") return "bot";
 
   if (workEntry.itemType === "command_execution" || workEntry.command) {
     return "terminal";
@@ -1904,8 +1904,9 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
     case "mcp_tool_call":
       return "wrench";
     case "dynamic_tool_call":
-    case "collab_agent_tool_call":
       return "hammer";
+    case "collab_agent_tool_call":
+      return "bot";
   }
 
   return workToneIcon(workEntry.tone).iconName;

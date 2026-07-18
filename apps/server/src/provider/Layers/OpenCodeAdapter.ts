@@ -6,6 +6,7 @@ import {
   type ProviderRuntimeEvent,
   type ProviderSession,
   RuntimeItemId,
+  RuntimeAgentId,
   RuntimeRequestId,
   ThreadId,
   type ToolLifecycleItemType,
@@ -77,6 +78,8 @@ interface OpenCodeSessionContext {
   readonly partById: Map<string, Part>;
   readonly emittedTextByPartId: Map<string, string>;
   readonly completedAssistantPartIds: Set<string>;
+  readonly subagentSessions: Map<string, { readonly parentId: string; readonly title: string }>;
+  readonly settledSubagentSessionIds: Set<string>;
   readonly turns: Array<OpenCodeTurnSnapshot>;
   activeTurnId: TurnId | undefined;
   activeAgent: string | undefined;
@@ -648,7 +651,22 @@ export function makeOpenCodeAdapter(
     ) {
       const payloadSessionId =
         "properties" in event ? (event.properties as { sessionID?: unknown }).sessionID : undefined;
-      if (payloadSessionId !== context.openCodeSessionId) {
+      const createdSubagent =
+        event.type === "session.created" &&
+        (event.properties.info.parentID === context.openCodeSessionId ||
+          (event.properties.info.parentID !== undefined &&
+            context.subagentSessions.has(event.properties.info.parentID)));
+      if (createdSubagent) {
+        context.subagentSessions.set(event.properties.info.id, {
+          parentId: event.properties.info.parentID!,
+          title: event.properties.info.title,
+        });
+      }
+      const subagent =
+        typeof payloadSessionId === "string"
+          ? context.subagentSessions.get(payloadSessionId)
+          : undefined;
+      if (payloadSessionId !== context.openCodeSessionId && !subagent) {
         return;
       }
 
@@ -658,12 +676,102 @@ export function makeOpenCodeAdapter(
         event: {
           provider: PROVIDER,
           threadId: context.session.threadId,
-          providerThreadId: context.openCodeSessionId,
+          providerThreadId:
+            typeof payloadSessionId === "string" ? payloadSessionId : context.openCodeSessionId,
           type: event.type,
           ...(turnId ? { turnId } : {}),
           payload: event,
         },
       });
+
+      if (subagent && typeof payloadSessionId === "string") {
+        const agentId = RuntimeAgentId.make(payloadSessionId);
+        const parentAgentId =
+          subagent.parentId === context.openCodeSessionId
+            ? undefined
+            : RuntimeAgentId.make(subagent.parentId);
+        const identity = {
+          agentId,
+          ...(parentAgentId ? { parentAgentId } : {}),
+          description: subagent.title,
+          providerThreadId: payloadSessionId,
+        };
+        if (event.type === "session.created") {
+          yield* emit({
+            ...(yield* buildEventBase({
+              threadId: context.session.threadId,
+              turnId,
+              raw: event,
+            })),
+            type: "agent.started",
+            payload: { ...identity, status: "running" },
+          });
+          return;
+        }
+        if (event.type === "session.status" && event.properties.status.type === "busy") {
+          yield* emit({
+            ...(yield* buildEventBase({
+              threadId: context.session.threadId,
+              turnId,
+              raw: event,
+            })),
+            type: "agent.updated",
+            payload: { ...identity, status: "running" },
+          });
+          return;
+        }
+        if (
+          (event.type === "session.status" && event.properties.status.type === "idle") ||
+          event.type === "session.idle"
+        ) {
+          if (!context.settledSubagentSessionIds.has(payloadSessionId)) {
+            context.settledSubagentSessionIds.add(payloadSessionId);
+            yield* emit({
+              ...(yield* buildEventBase({
+                threadId: context.session.threadId,
+                turnId,
+                raw: event,
+              })),
+              type: "agent.completed",
+              payload: { ...identity, status: "completed" },
+            });
+          }
+          return;
+        }
+        if (event.type === "session.error") {
+          context.settledSubagentSessionIds.add(payloadSessionId);
+          yield* emit({
+            ...(yield* buildEventBase({
+              threadId: context.session.threadId,
+              turnId,
+              raw: event,
+            })),
+            type: "agent.completed",
+            payload: {
+              ...identity,
+              status: "failed",
+              summary: sessionErrorMessage(event.properties.error),
+            },
+          });
+          return;
+        }
+        if (event.type === "session.deleted") {
+          context.subagentSessions.delete(payloadSessionId);
+          if (!context.settledSubagentSessionIds.has(payloadSessionId)) {
+            yield* emit({
+              ...(yield* buildEventBase({
+                threadId: context.session.threadId,
+                turnId,
+                raw: event,
+              })),
+              type: "agent.completed",
+              payload: { ...identity, status: "stopped" },
+            });
+          }
+          return;
+        }
+        return;
+      }
 
       switch (event.type) {
         case "message.updated": {
@@ -1137,6 +1245,8 @@ export function makeOpenCodeAdapter(
           emittedTextByPartId: new Map(),
           messageRoleById: new Map(),
           completedAssistantPartIds: new Set(),
+          subagentSessions: new Map(),
+          settledSubagentSessionIds: new Set(),
           turns: [],
           activeTurnId: undefined,
           activeAgent: undefined,

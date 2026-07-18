@@ -606,6 +606,89 @@ function runtimeEventToActivities(
       ];
     }
 
+    case "agent.started": {
+      const title = event.payload.role ? `${event.payload.role} subagent` : "Subagent";
+      return [
+        {
+          id: event.eventId,
+          createdAt: event.createdAt,
+          tone: "tool",
+          kind: "agent.started",
+          summary: `${title} started`,
+          payload: {
+            itemType: "collab_agent_tool_call",
+            itemId: event.payload.agentId,
+            agentId: event.payload.agentId,
+            status: "inProgress",
+            title,
+            ...(event.payload.description
+              ? { detail: truncateDetail(event.payload.description) }
+              : {}),
+            data: event.payload,
+          },
+          turnId: toTurnId(event.turnId) ?? null,
+          ...maybeSequence,
+        },
+      ];
+    }
+
+    case "agent.updated": {
+      const title = event.payload.role ? `${event.payload.role} subagent` : "Subagent";
+      return [
+        {
+          id: event.eventId,
+          createdAt: event.createdAt,
+          tone: "tool",
+          kind: "agent.updated",
+          summary: `${title} ${event.payload.status}`,
+          payload: {
+            itemType: "collab_agent_tool_call",
+            itemId: event.payload.agentId,
+            agentId: event.payload.agentId,
+            status: "inProgress",
+            title,
+            ...(event.payload.summary || event.payload.description
+              ? {
+                  detail: truncateDetail(event.payload.summary ?? event.payload.description ?? ""),
+                }
+              : {}),
+            data: event.payload,
+          },
+          turnId: toTurnId(event.turnId) ?? null,
+          ...maybeSequence,
+        },
+      ];
+    }
+
+    case "agent.completed": {
+      const title = event.payload.role ? `${event.payload.role} subagent` : "Subagent";
+      return [
+        {
+          id: event.eventId,
+          createdAt: event.createdAt,
+          tone: event.payload.status === "failed" ? "error" : "tool",
+          kind: "agent.completed",
+          summary:
+            event.payload.status === "failed"
+              ? `${title} failed`
+              : event.payload.status === "stopped"
+                ? `${title} stopped`
+                : `${title} completed`,
+          payload: {
+            itemType: "collab_agent_tool_call",
+            itemId: event.payload.agentId,
+            agentId: event.payload.agentId,
+            status: event.payload.status,
+            title,
+            ...(event.payload.summary ? { detail: truncateDetail(event.payload.summary) } : {}),
+            data: event.payload,
+          },
+          turnId: toTurnId(event.turnId) ?? null,
+          ...maybeSequence,
+        },
+      ];
+    }
+
     case "thread.state.changed": {
       if (event.payload.state !== "compacted") {
         return [];

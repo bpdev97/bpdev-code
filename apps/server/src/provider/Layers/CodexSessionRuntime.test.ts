@@ -18,6 +18,7 @@ import {
   hasConfiguredMcpServer,
   isRecoverableThreadResumeError,
   openCodexThread,
+  shouldSuppressCodexChildNotification,
 } from "./CodexSessionRuntime.ts";
 const isCodexAppServerRequestError = Schema.is(CodexErrors.CodexAppServerRequestError);
 
@@ -34,6 +35,28 @@ describe("CodexSessionRuntimeIdentifierGenerationError", () => {
     NodeAssert.equal(
       error.message,
       "Failed to generate Codex App Server identifier for provider-event.",
+    );
+  });
+});
+
+describe("Codex child notification isolation", () => {
+  it("suppresses child transcript and tool events from the parent stream", () => {
+    NodeAssert.equal(shouldSuppressCodexChildNotification("item/agentMessage/delta"), true);
+    NodeAssert.equal(shouldSuppressCodexChildNotification("item/completed", "agentMessage"), true);
+    NodeAssert.equal(
+      shouldSuppressCodexChildNotification("item/started", "commandExecution"),
+      true,
+    );
+  });
+
+  it("keeps nested collaboration lifecycle events for hierarchy tracking", () => {
+    NodeAssert.equal(
+      shouldSuppressCodexChildNotification("item/started", "collabAgentToolCall"),
+      false,
+    );
+    NodeAssert.equal(
+      shouldSuppressCodexChildNotification("item/completed", "subAgentActivity"),
+      false,
     );
   });
 });

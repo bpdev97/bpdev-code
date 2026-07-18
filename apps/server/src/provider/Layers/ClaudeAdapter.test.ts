@@ -1476,7 +1476,13 @@ describe("ClaudeAdapterLive", () => {
         uuid: "task-subagent-progress",
       } as unknown as SDKMessage);
 
-      yield* waitForRuntimeEvent(runtimeEvents, (event) => event.type === "task.progress");
+      yield* waitForRuntimeEvent(runtimeEvents, (event) => event.type === "agent.updated");
+      const progress = runtimeEvents.find((event) => event.type === "agent.updated");
+      assert.equal(progress?.type, "agent.updated");
+      if (progress?.type === "agent.updated") {
+        assert.equal(progress.payload.agentId, "task-subagent");
+        assert.equal(progress.payload.status, "running");
+      }
       assert.equal(
         runtimeEvents.some((event) => event.type === "turn.completed"),
         false,
@@ -1589,7 +1595,7 @@ describe("ClaudeAdapterLive", () => {
           uuid: "task-missing-idle-completed",
         } as unknown as SDKMessage);
 
-        yield* waitForRuntimeEvent(runtimeEvents, (event) => event.type === "task.completed");
+        yield* waitForRuntimeEvent(runtimeEvents, (event) => event.type === "agent.completed");
         yield* TestClock.adjust("49 millis");
         assert.equal(
           runtimeEvents.some((event) => event.type === "turn.completed"),
@@ -1674,7 +1680,7 @@ describe("ClaudeAdapterLive", () => {
         uuid: "task-still-active-progress",
       } as unknown as SDKMessage);
 
-      yield* waitForRuntimeEvent(runtimeEvents, (event) => event.type === "task.progress");
+      yield* waitForRuntimeEvent(runtimeEvents, (event) => event.type === "agent.updated");
       yield* TestClock.adjust("99 millis");
       assert.equal(
         runtimeEvents.some((event) => event.type === "turn.completed"),

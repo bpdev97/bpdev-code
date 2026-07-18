@@ -112,10 +112,12 @@ export function extractToolCallIdentity(payloadValue: unknown): string | null {
   const item = asRecord(data?.item);
   return firstString(
     payload?.itemId,
+    payload?.agentId,
     payload?.toolCallId,
     payload?.toolUseId,
     data?.toolCallId,
     data?.toolUseId,
+    data?.agentId,
     item?.id,
   );
 }
@@ -125,7 +127,10 @@ export function isToolLifecycleActivityKind(kind: string): boolean {
     kind === "tool.started" ||
     kind === "tool.progress" ||
     kind === "tool.updated" ||
-    kind === "tool.completed"
+    kind === "tool.completed" ||
+    kind === "agent.started" ||
+    kind === "agent.updated" ||
+    kind === "agent.completed"
   );
 }
 
@@ -142,7 +147,11 @@ export function collapseToolLifecycleEntries<T extends ToolLifecycleEntry>(
     const stableIndex = stableKey ? stableToolIndexes.get(stableKey) : undefined;
     if (stableKey !== null && stableIndex !== undefined) {
       const previous = collapsed[stableIndex];
-      if (previous && previous.activityKind !== "tool.completed") {
+      if (
+        previous &&
+        previous.activityKind !== "tool.completed" &&
+        previous.activityKind !== "agent.completed"
+      ) {
         collapsed[stableIndex] = null;
         collapsed.push(mergeEntries(previous, entry));
         stableToolIndexes.set(stableKey, collapsed.length - 1);
@@ -294,12 +303,16 @@ function lifecycleStatus(
     normalizedStatus(item.status) ??
     normalizedStatus(data.status);
   if (explicit) return explicit;
-  if (activityKind === "tool.completed") return "completed";
+  if (activityKind === "tool.completed" || activityKind === "agent.completed") {
+    return "completed";
+  }
   if (activityKind === "tool.denied") return "declined";
   if (
     activityKind === "tool.started" ||
     activityKind === "tool.updated" ||
-    activityKind === "tool.progress"
+    activityKind === "tool.progress" ||
+    activityKind === "agent.started" ||
+    activityKind === "agent.updated"
   ) {
     return "inProgress";
   }
@@ -746,7 +759,10 @@ export function deriveToolCallPresentation(
 ): ToolCallPresentation | undefined {
   const payload = asRecord(input.payload) ?? {};
   const itemType = isToolLifecycleItemType(payload.itemType) ? payload.itemType : null;
-  const isToolActivity = input.activityKind.startsWith("tool.") || itemType !== null;
+  const isToolActivity =
+    input.activityKind.startsWith("tool.") ||
+    input.activityKind.startsWith("agent.") ||
+    itemType !== null;
   if (!isToolActivity) return undefined;
 
   const data = asRecord(payload.data) ?? {};
@@ -759,10 +775,12 @@ export function deriveToolCallPresentation(
 
   const callId = firstString(
     payload.itemId,
+    payload.agentId,
     payload.toolCallId,
     payload.toolUseId,
     data.toolCallId,
     data.toolUseId,
+    data.agentId,
     item.id,
     item.callId,
   );
@@ -864,6 +882,26 @@ export function deriveToolCallPresentation(
   );
   appendTextSection(sections, "code", "Command", command, "shell");
   appendTextSection(sections, "code", "Invocation", rawCommand, "shell");
+  if (category === "agent") {
+    appendTextSection(sections, "text", "Prompt", firstString(item.prompt, data.prompt));
+    appendTextSection(sections, "text", "Summary", firstString(item.summary, data.summary));
+    appendTextSection(sections, "text", "Role", firstString(item.role, data.role));
+    appendTextSection(sections, "text", "Model", firstString(item.model, data.model));
+    appendTextSection(
+      sections,
+      "code",
+      "Parent agent",
+      firstString(item.parentAgentId, data.parentAgentId),
+      "text",
+    );
+    appendTextSection(
+      sections,
+      "code",
+      "Agent path",
+      firstString(item.agentPath, data.agentPath),
+      "text",
+    );
+  }
   if (searchQueries.size > 0) {
     appendTextSection(
       sections,
@@ -931,6 +969,16 @@ export function deriveToolCallPresentation(
   const firstSearchQuery = searchQueries.values().next().value as string | undefined;
   const preview = firstString(
     command,
+    category === "agent"
+      ? firstString(
+          item.summary,
+          data.summary,
+          item.description,
+          data.description,
+          item.prompt,
+          data.prompt,
+        )
+      : null,
     firstSearchQuery
       ? searchQueries.size === 1
         ? firstLine(firstSearchQuery)

@@ -824,7 +824,7 @@ function shouldCollapseToolLifecycleEntries(
   if (!isToolLifecycleActivityKind(next.activityKind)) {
     return false;
   }
-  if (previous.activityKind === "tool.completed") {
+  if (previous.activityKind === "tool.completed" || previous.activityKind === "agent.completed") {
     return false;
   }
   if (previous.collapseKey !== undefined && previous.collapseKey === next.collapseKey) {

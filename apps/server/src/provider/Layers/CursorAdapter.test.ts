@@ -23,6 +23,7 @@ import {
   type ProviderRuntimeEvent,
   ThreadId,
   ProviderInstanceId,
+  RuntimeAgentId,
 } from "@t3tools/contracts";
 
 import { ServerConfig } from "../../config.ts";
@@ -1262,8 +1263,14 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
       yield* serverSettings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
       const itemsFiber = yield* adapter.streamEvents.pipe(
         Stream.filter(
-          (event): event is Extract<ProviderRuntimeEvent, { type: "item.completed" }> =>
-            event.type === "item.completed" && String(event.threadId) === String(threadId),
+          (
+            event,
+          ): event is Extract<
+            ProviderRuntimeEvent,
+            { type: "agent.completed" | "item.completed" }
+          > =>
+            (event.type === "agent.completed" || event.type === "item.completed") &&
+            String(event.threadId) === String(threadId),
         ),
         Stream.take(2),
         Stream.runCollect,
@@ -1280,13 +1287,29 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
       yield* adapter.sendTurn({ threadId, input: "emit extension activity", attachments: [] });
 
       const items = Array.from(yield* Fiber.join(itemsFiber));
-      assert.deepStrictEqual(
-        items.map((event) => [event.payload.title, event.payload.detail, event.raw?.method]),
-        [
-          ["Completed subagent task", "Explore the provider adapter", "cursor/task"],
+      const agent = items.find((event) => event.type === "agent.completed");
+      assert.equal(agent?.type, "agent.completed");
+      if (agent?.type === "agent.completed") {
+        assert.deepStrictEqual(agent.payload, {
+          agentId: RuntimeAgentId.make("agent-1"),
+          status: "completed",
+          role: "explore",
+          description: "Explore the provider adapter",
+          summary: "Explore the provider adapter",
+          prompt: "Inspect Cursor ACP handling",
+          model: "fast",
+          durationMs: 250,
+          providerThreadId: "agent-1",
+        });
+      }
+      const image = items.find((event) => event.type === "item.completed");
+      assert.equal(image?.type, "item.completed");
+      if (image?.type === "item.completed") {
+        assert.deepStrictEqual(
+          [image.payload.title, image.payload.detail, image.raw?.method],
           ["Generated image", "/tmp/provider-diagram.png", "cursor/generate_image"],
-        ],
-      );
+        );
+      }
       yield* adapter.stopSession(threadId);
     }),
   );

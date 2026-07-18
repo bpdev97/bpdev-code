@@ -848,6 +848,69 @@ describe("deriveWorkLogEntries", () => {
     expect(entries.map((entry) => entry.id)).toEqual(["task-progress", "task-complete"]);
   });
 
+  it("collapses subagent lifecycle into one attributed agent card", () => {
+    const basePayload = {
+      itemType: "collab_agent_tool_call",
+      itemId: "agent-1",
+      agentId: "agent-1",
+      title: "reviewer subagent",
+      data: {
+        agentId: "agent-1",
+        parentAgentId: "root-agent",
+        role: "reviewer",
+        description: "Review the provider adapters",
+        prompt: "Find lifecycle bugs",
+        model: "gpt-5.3-codex",
+      },
+    };
+    const entries = deriveWorkLogEntries([
+      makeActivity({
+        id: "agent-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "agent.started",
+        summary: "reviewer subagent started",
+        tone: "tool",
+        payload: { ...basePayload, status: "inProgress" },
+      }),
+      makeActivity({
+        id: "agent-complete",
+        createdAt: "2026-02-23T00:00:03.000Z",
+        kind: "agent.completed",
+        summary: "reviewer subagent completed",
+        tone: "tool",
+        payload: {
+          ...basePayload,
+          status: "completed",
+          detail: "No lifecycle bugs found",
+          data: { ...basePayload.data, summary: "No lifecycle bugs found" },
+        },
+      }),
+    ]);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      id: "agent-complete",
+      itemType: "collab_agent_tool_call",
+      toolLifecycleStatus: "completed",
+      sourceActivityKind: "agent.completed",
+      toolCall: {
+        callId: "agent-1",
+        category: "agent",
+        title: "reviewer subagent",
+        status: "completed",
+        preview: "No lifecycle bugs found",
+      },
+    });
+    expect(entries[0]?.toolCall?.sections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ title: "Prompt", content: "Find lifecycle bugs" }),
+        expect.objectContaining({ title: "Role", content: "reviewer" }),
+        expect.objectContaining({ title: "Model", content: "gpt-5.3-codex" }),
+        expect.objectContaining({ title: "Parent agent", content: "root-agent" }),
+      ]),
+    );
+  });
+
   it("uses payload summary as label for task entries when available", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({

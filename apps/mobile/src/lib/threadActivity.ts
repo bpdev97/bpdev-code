@@ -402,7 +402,7 @@ function shouldCollapseToolLifecycleEntries(
   if (!isToolLifecycleActivityKind(next.activityKind)) {
     return false;
   }
-  if (previous.activityKind === "tool.completed") {
+  if (previous.activityKind === "tool.completed" || previous.activityKind === "agent.completed") {
     return false;
   }
   if (previous.collapseKey !== undefined && previous.collapseKey === next.collapseKey) {
@@ -572,7 +572,7 @@ function workEntryIcon(entry: DerivedWorkLogEntry): ThreadFeedActivity["icon"] {
   if (entry.toolCall?.category === "read" || entry.toolCall?.category === "image") return "eye";
   if (entry.toolCall?.category === "search" || entry.toolCall?.category === "web") return "globe";
   if (entry.toolCall?.category === "mcp") return "wrench";
-  if (entry.toolCall?.category === "agent") return "hammer";
+  if (entry.toolCall?.category === "agent") return "agent";
   if (entry.requestKind === "command") return "command";
   if (entry.requestKind === "file-read") return "eye";
   if (entry.requestKind === "file-change") return "edit";
@@ -581,7 +581,8 @@ function workEntryIcon(entry: DerivedWorkLogEntry): ThreadFeedActivity["icon"] {
   if (entry.itemType === "web_search") return "globe";
   if (entry.itemType === "image_view") return "eye";
   if (entry.itemType === "mcp_tool_call") return "wrench";
-  if (entry.itemType === "dynamic_tool_call" || entry.itemType === "collab_agent_tool_call") {
+  if (entry.itemType === "collab_agent_tool_call") return "agent";
+  if (entry.itemType === "dynamic_tool_call") {
     return "hammer";
   }
   if (entry.tone === "error") return "alert";
