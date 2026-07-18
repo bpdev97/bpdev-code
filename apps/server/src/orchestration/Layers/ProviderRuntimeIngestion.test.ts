@@ -3189,6 +3189,76 @@ describe("ProviderRuntimeIngestion", () => {
     ).toBe("# Plan title");
   });
 
+  it("projects provider-neutral subagent lifecycle into stable agent activities", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    harness.emit({
+      type: "agent.started",
+      eventId: asEventId("evt-agent-started"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-agent-1"),
+      payload: {
+        agentId: "agent-1",
+        parentAgentId: "root-agent",
+        role: "reviewer",
+        description: "Review the provider adapters",
+        prompt: "Find lifecycle bugs",
+        model: "gpt-5.3-codex",
+        providerThreadId: "provider-agent-1",
+        status: "running",
+      },
+    });
+    harness.emit({
+      type: "agent.completed",
+      eventId: asEventId("evt-agent-completed"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: "2026-01-01T00:00:01.000Z",
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-agent-1"),
+      payload: {
+        agentId: "agent-1",
+        parentAgentId: "root-agent",
+        role: "reviewer",
+        description: "Review the provider adapters",
+        prompt: "Find lifecycle bugs",
+        model: "gpt-5.3-codex",
+        providerThreadId: "provider-agent-1",
+        status: "completed",
+        summary: "No lifecycle bugs found",
+        durationMs: 1_000,
+      },
+    });
+
+    const thread = await waitForThread(harness.readModel, (entry) =>
+      entry.activities.some(
+        (activity: ProviderRuntimeTestActivity) => activity.kind === "agent.completed",
+      ),
+    );
+    const started = thread.activities.find(
+      (activity: ProviderRuntimeTestActivity) => activity.kind === "agent.started",
+    );
+    const completed = thread.activities.find(
+      (activity: ProviderRuntimeTestActivity) => activity.kind === "agent.completed",
+    );
+    expect(started?.summary).toBe("reviewer subagent started");
+    expect(started?.payload).toMatchObject({
+      itemType: "collab_agent_tool_call",
+      itemId: "agent-1",
+      status: "inProgress",
+      title: "reviewer subagent",
+    });
+    expect(completed?.summary).toBe("reviewer subagent completed");
+    expect(completed?.payload).toMatchObject({
+      itemType: "collab_agent_tool_call",
+      itemId: "agent-1",
+      status: "completed",
+      detail: "No lifecycle bugs found",
+    });
+  });
+
   it("projects structured user input request and resolution as thread activities", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";

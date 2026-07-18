@@ -85,6 +85,73 @@ function makeThread(
 }
 
 describe("buildThreadFeed", () => {
+  it("renders a collapsed subagent lifecycle with mobile agent presentation", () => {
+    const turnId = TurnId.make("turn-agent-1");
+    const basePayload = {
+      itemType: "collab_agent_tool_call",
+      itemId: "agent-1",
+      agentId: "agent-1",
+      title: "explore subagent",
+      data: {
+        agentId: "agent-1",
+        role: "explore",
+        prompt: "Inspect the mobile feed",
+        model: "fast",
+      },
+    };
+    const thread = makeThread({
+      id: ThreadId.make("thread-mobile-agent"),
+      projectId: ProjectId.make("project-1"),
+      title: "Mobile subagent",
+      activities: [
+        makeActivity({
+          id: EventId.make("agent-started"),
+          kind: "agent.started",
+          tone: "tool",
+          summary: "explore subagent started",
+          createdAt: "2026-04-01T00:00:01.000Z",
+          turnId,
+          payload: { ...basePayload, status: "inProgress" },
+        }),
+        makeActivity({
+          id: EventId.make("agent-completed"),
+          kind: "agent.completed",
+          tone: "tool",
+          summary: "explore subagent completed",
+          createdAt: "2026-04-01T00:00:02.000Z",
+          turnId,
+          payload: {
+            ...basePayload,
+            status: "completed",
+            detail: "Mobile feed verified",
+            data: { ...basePayload.data, summary: "Mobile feed verified" },
+          },
+        }),
+      ],
+    });
+
+    const feed = buildThreadFeed(thread);
+    expect(feed).toHaveLength(1);
+    expect(feed[0]).toMatchObject({
+      type: "activity-group",
+      activities: [
+        {
+          id: "agent-completed",
+          icon: "agent",
+          status: "success",
+          toolLike: true,
+          toolCall: {
+            callId: "agent-1",
+            category: "agent",
+            title: "explore subagent",
+            status: "completed",
+            preview: "Mobile feed verified",
+          },
+        },
+      ],
+    });
+  });
+
   it("keeps historic work entries attributed to their turns", () => {
     const thread = makeThread({
       id: ThreadId.make("thread-1"),

@@ -16,6 +16,7 @@ import {
   type ProviderUserInputAnswers,
   ProviderDriverKind,
   ProviderInstanceId,
+  RuntimeAgentId,
   RuntimeRequestId,
   type RuntimeMode,
   type ThreadId,
@@ -719,25 +720,43 @@ export function makeCursorAdapter(
                 Effect.gen(function* () {
                   yield* logNative(input.threadId, "cursor/task", params, "acp.cursor.extension");
                   if (!ctx) return;
-                  yield* offerRuntimeEvent(
-                    makeAcpToolCallEvent({
-                      stamp: yield* makeEventStamp(),
-                      provider: PROVIDER,
-                      threadId: input.threadId,
-                      turnId: ctx.activeTurnId,
-                      toolCall: {
-                        toolCallId: params.toolCallId,
-                        kind: "other",
-                        title: "Completed subagent task",
-                        status: "completed",
-                        detail: params.description.trim(),
-                        data: { ...params },
-                      },
-                      rawPayload: params,
+                  const stamp = yield* makeEventStamp();
+                  const rawAgentId = params.agentId?.trim() || params.toolCallId;
+                  const role =
+                    typeof params.subagentType === "string"
+                      ? params.subagentType === "unspecified"
+                        ? undefined
+                        : params.subagentType
+                      : params.subagentType.custom.trim() || undefined;
+                  yield* offerRuntimeEvent({
+                    ...stamp,
+                    provider: PROVIDER,
+                    threadId: input.threadId,
+                    ...(ctx.activeTurnId ? { turnId: ctx.activeTurnId } : {}),
+                    type: "agent.completed",
+                    payload: {
+                      agentId: RuntimeAgentId.make(rawAgentId),
+                      status: "completed",
+                      ...(role ? { role } : {}),
+                      ...(params.description.trim()
+                        ? {
+                            description: params.description.trim(),
+                            summary: params.description.trim(),
+                          }
+                        : {}),
+                      ...(params.prompt.trim() ? { prompt: params.prompt.trim() } : {}),
+                      ...(params.model?.trim() ? { model: params.model.trim() } : {}),
+                      ...(typeof params.durationMs === "number"
+                        ? { durationMs: params.durationMs }
+                        : {}),
+                      providerThreadId: rawAgentId,
+                    },
+                    raw: {
                       source: "acp.cursor.extension",
                       method: "cursor/task",
-                    }),
-                  );
+                      payload: params,
+                    },
+                  });
                 }),
               ),
             );

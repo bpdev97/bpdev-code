@@ -40,6 +40,7 @@ import {
   type ProviderUserInputAnswers,
   type RuntimeContentStreamKind,
   RuntimeItemId,
+  RuntimeAgentId,
   RuntimeRequestId,
   RuntimeTaskId,
   ThreadId,
@@ -205,6 +206,10 @@ interface ClaudeSessionContext {
   }>;
   readonly inFlightTools: Map<number, ToolInFlight>;
   readonly claudeTasks: Map<string, ClaudeTaskState>;
+  readonly subagentTasks: Map<
+    string,
+    { readonly role?: string; readonly description?: string; readonly prompt?: string }
+  >;
   turnState: ClaudeTurnState | undefined;
   lastKnownContextWindow: number | undefined;
   lastKnownTokenUsage: ThreadTokenUsageSnapshot | undefined;
@@ -2810,15 +2815,33 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
             yield* schedulePendingResultRecovery(context);
           }
         }
-        yield* offerRuntimeEvent({
-          ...base,
-          type: "task.started",
-          payload: {
-            taskId: RuntimeTaskId.make(message.task_id),
-            description: message.description,
-            ...(message.task_type ? { taskType: message.task_type } : {}),
-          },
-        });
+        if (message.task_type === "agent") {
+          const subagent = {
+            ...(message.workflow_name ? { role: message.workflow_name } : {}),
+            ...(message.description ? { description: message.description } : {}),
+            ...(message.prompt ? { prompt: message.prompt } : {}),
+          };
+          context.subagentTasks.set(message.task_id, subagent);
+          yield* offerRuntimeEvent({
+            ...base,
+            type: "agent.started",
+            payload: {
+              agentId: RuntimeAgentId.make(message.task_id),
+              status: "running",
+              ...subagent,
+            },
+          });
+        } else {
+          yield* offerRuntimeEvent({
+            ...base,
+            type: "task.started",
+            payload: {
+              taskId: RuntimeTaskId.make(message.task_id),
+              description: message.description,
+              ...(message.task_type ? { taskType: message.task_type } : {}),
+            },
+          });
+        }
         return;
       case "task_updated":
         // `task_progress` and `task_notification` carry the displayable and
@@ -2833,17 +2856,47 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
             rawPayload: message,
           },
         );
-        yield* offerRuntimeEvent({
-          ...base,
-          type: "task.progress",
-          payload: {
-            taskId: RuntimeTaskId.make(message.task_id),
-            description: message.description,
-            ...(message.summary ? { summary: message.summary } : {}),
-            ...(message.usage ? { usage: message.usage } : {}),
-            ...(message.last_tool_name ? { lastToolName: message.last_tool_name } : {}),
-          },
-        });
+        if (context.subagentTasks.has(message.task_id) || message.subagent_type) {
+          const existing = context.subagentTasks.get(message.task_id);
+          const subagent = {
+            ...(message.subagent_type
+              ? { role: message.subagent_type }
+              : existing?.role
+                ? { role: existing.role }
+                : {}),
+            ...(message.description
+              ? { description: message.description }
+              : existing?.description
+                ? { description: existing.description }
+                : {}),
+            ...(existing?.prompt ? { prompt: existing.prompt } : {}),
+          };
+          context.subagentTasks.set(message.task_id, subagent);
+          yield* offerRuntimeEvent({
+            ...base,
+            type: "agent.updated",
+            payload: {
+              agentId: RuntimeAgentId.make(message.task_id),
+              status: "running",
+              ...subagent,
+              ...(message.summary ? { summary: message.summary } : {}),
+              ...(message.usage ? { usage: message.usage } : {}),
+              ...(message.last_tool_name ? { lastToolName: message.last_tool_name } : {}),
+            },
+          });
+        } else {
+          yield* offerRuntimeEvent({
+            ...base,
+            type: "task.progress",
+            payload: {
+              taskId: RuntimeTaskId.make(message.task_id),
+              description: message.description,
+              ...(message.summary ? { summary: message.summary } : {}),
+              ...(message.usage ? { usage: message.usage } : {}),
+              ...(message.last_tool_name ? { lastToolName: message.last_tool_name } : {}),
+            },
+          });
+        }
         return;
       case "task_notification":
         if (context.turnState) {
@@ -2858,16 +2911,34 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
             rawPayload: message,
           },
         );
-        yield* offerRuntimeEvent({
-          ...base,
-          type: "task.completed",
-          payload: {
-            taskId: RuntimeTaskId.make(message.task_id),
-            status: message.status,
-            ...(message.summary ? { summary: message.summary } : {}),
-            ...(message.usage ? { usage: message.usage } : {}),
-          },
-        });
+        const subagent = context.subagentTasks.get(message.task_id);
+        if (subagent) {
+          yield* offerRuntimeEvent({
+            ...base,
+            type: "agent.completed",
+            payload: {
+              agentId: RuntimeAgentId.make(message.task_id),
+              status: message.status,
+              ...subagent,
+              ...(message.summary ? { summary: message.summary } : {}),
+              ...(message.usage ? { usage: message.usage } : {}),
+              ...(typeof message.usage?.duration_ms === "number"
+                ? { durationMs: message.usage.duration_ms }
+                : {}),
+            },
+          });
+        } else {
+          yield* offerRuntimeEvent({
+            ...base,
+            type: "task.completed",
+            payload: {
+              taskId: RuntimeTaskId.make(message.task_id),
+              status: message.status,
+              ...(message.summary ? { summary: message.summary } : {}),
+              ...(message.usage ? { usage: message.usage } : {}),
+            },
+          });
+        }
         if (context.turnState?.pendingResult) {
           yield* schedulePendingResultRecovery(context);
         }
@@ -3302,6 +3373,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const pendingUserInputs = new Map<ApprovalRequestId, PendingUserInput>();
       const inFlightTools = new Map<number, ToolInFlight>();
       const claudeTasks = new Map<string, ClaudeTaskState>();
+      const subagentTasks = new Map<
+        string,
+        { readonly role?: string; readonly description?: string; readonly prompt?: string }
+      >();
 
       const contextRef = yield* Ref.make<ClaudeSessionContext | undefined>(undefined);
 
@@ -3743,6 +3818,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         turns: [],
         inFlightTools,
         claudeTasks,
+        subagentTasks,
         turnState: undefined,
         lastKnownContextWindow: initialContextWindow,
         lastKnownTokenUsage: undefined,

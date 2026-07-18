@@ -95,6 +95,7 @@ type CodexApprovalsReviewer = NonNullable<
 type CodexThreadItem =
   | EffectCodexSchema.V2ThreadReadResponse["thread"]["turns"][number]["items"][number]
   | EffectCodexSchema.V2ThreadRollbackResponse["thread"]["turns"][number]["items"][number];
+type CodexLifecycleItemType = EffectCodexSchema.V2ItemStartedNotification["item"]["type"];
 
 export interface CodexSessionRuntimeOptions {
   readonly threadId: ThreadId;
@@ -616,23 +617,14 @@ function rememberCollabReceiverTurns(
   }
 }
 
-function shouldSuppressChildConversationNotification(
+export function shouldSuppressCodexChildNotification(
   method: CodexRpc.ServerNotificationMethod,
+  itemType?: CodexLifecycleItemType,
 ): boolean {
-  return (
-    method === "thread/started" ||
-    method === "thread/status/changed" ||
-    method === "thread/archived" ||
-    method === "thread/unarchived" ||
-    method === "thread/closed" ||
-    method === "thread/compacted" ||
-    method === "thread/name/updated" ||
-    method === "thread/tokenUsage/updated" ||
-    method === "turn/started" ||
-    method === "turn/completed" ||
-    method === "turn/plan/updated" ||
-    method === "item/plan/delta"
-  );
+  if (method !== "item/started" && method !== "item/completed") {
+    return true;
+  }
+  return itemType !== "collabAgentToolCall" && itemType !== "subAgentActivity";
 }
 
 function toCodexUserInputAnswer(
@@ -845,8 +837,19 @@ export const makeCodexSessionRuntime = (
             : undefined;
         })();
 
-        rememberCollabReceiverTurns(collabReceiverTurns, notification, route.turnId);
-        if (childParentTurnId && shouldSuppressChildConversationNotification(notification.method)) {
+        rememberCollabReceiverTurns(
+          collabReceiverTurns,
+          notification,
+          childParentTurnId ?? route.turnId,
+        );
+        const lifecycleItemType =
+          notification.method === "item/started" || notification.method === "item/completed"
+            ? notification.params.item.type
+            : undefined;
+        if (
+          childParentTurnId &&
+          shouldSuppressCodexChildNotification(notification.method, lifecycleItemType)
+        ) {
           yield* Ref.set(collabReceiverTurnsRef, collabReceiverTurns);
           return;
         }
