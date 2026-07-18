@@ -23,7 +23,7 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
 
 COPY apps/push-relay ./apps/push-relay
 COPY packages/contracts ./packages/contracts
-RUN pnpm --filter @bpdev/push-relay build
+RUN cd apps/push-relay && ./node_modules/.bin/vp pack
 
 FROM node:24.13.1-bookworm-slim AS runtime
 
