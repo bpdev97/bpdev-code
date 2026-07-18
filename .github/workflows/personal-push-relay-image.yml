@@ -60,7 +60,7 @@ jobs:
         with:
           context: .
           file: apps/push-relay/Dockerfile
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: false
           cache-from: type=gha,scope=personal-push-relay
           cache-to: type=gha,mode=max,scope=personal-push-relay

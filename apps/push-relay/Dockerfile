@@ -3,6 +3,9 @@ FROM node:24.13.1-bookworm-slim AS build
 
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
+# The reduced Docker workspace intentionally omits unrelated patched packages. Dependencies are
+# installed explicitly below, so prevent `vp pack` from attempting a second workspace-wide install.
+ENV VP_SKIP_INSTALL=1
 WORKDIR /workspace
 
 RUN apt-get update \
