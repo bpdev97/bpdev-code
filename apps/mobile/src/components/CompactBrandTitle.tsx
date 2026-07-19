@@ -1,7 +1,6 @@
 import { View } from "react-native";
 
 import { AppText as Text } from "./AppText";
-import { T3Wordmark } from "./T3Wordmark";
 import { APP_NAME } from "../branding";
 import { useThemeColor } from "../lib/useThemeColor";
 
@@ -20,7 +19,6 @@ export function CompactBrandTitle() {
       role="heading"
       style={{ alignItems: "center", flexDirection: "row", gap: 6 }}
     >
-      <T3Wordmark color={mutedColor} height={12} />
       <Text
         style={{
           color: mutedColor,

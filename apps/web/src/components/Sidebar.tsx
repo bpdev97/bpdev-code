@@ -2794,7 +2794,6 @@ function SidebarBrand() {
       className="sidebar-brand ml-[var(--workspace-titlebar-content-left)] h-7 w-fit min-w-0 shrink-0 items-center gap-1 overflow-hidden rounded-md text-foreground outline-hidden ring-ring focus-visible:ring-2"
       to="/"
     >
-      <T3Wordmark />
       <span className="truncate text-sm font-medium tracking-tight text-muted-foreground">
         {APP_BASE_NAME}
       </span>
@@ -2813,22 +2812,6 @@ function useSidebarStageLabel() {
     primaryServerVersion,
     fallbackStageLabel: APP_STAGE_LABEL,
   });
-}
-
-function T3Wordmark() {
-  return (
-    <svg
-      aria-label="T"
-      className="h-2.5 w-auto shrink-0 text-foreground"
-      viewBox="15.5309 37 48.8 56.96"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <path
-        d="M33.4509 93V47.56H15.5309V37H64.3309V47.56H46.4109V93H33.4509Z"
-        fill="currentColor"
-      />
-    </svg>
-  );
 }
 
 const SidebarChromeFooter = memo(function SidebarChromeFooter() {

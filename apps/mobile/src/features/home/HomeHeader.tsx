@@ -12,7 +12,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ControlPillMenu } from "../../components/ControlPill";
 import { SymbolView } from "../../components/AppSymbol";
-import { T3Wordmark } from "../../components/T3Wordmark";
 import { APP_NAME } from "../../branding";
 import { useThemeColor } from "../../lib/useThemeColor";
 import { useHardwareKeyboardCommand } from "../keyboard/hardwareKeyboardCommands";
@@ -176,7 +175,6 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
         <View className="w-full max-w-[720px] self-center gap-3">
           <View className="flex-row items-center gap-2.5">
             <View className="flex-1 flex-row items-center gap-2">
-              <T3Wordmark color={iconColor} height={15} />
               <RNText className="text-[21px] font-t3-medium tracking-[-0.5px] text-foreground-muted">
                 {APP_NAME}
               </RNText>
