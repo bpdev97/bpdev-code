@@ -19,7 +19,6 @@ const emitInterleavedAssistantToolCalls =
 const emitGenericToolPlaceholders = process.env.T3_ACP_EMIT_GENERIC_TOOL_PLACEHOLDERS === "1";
 const emitAgentThought = process.env.T3_ACP_EMIT_AGENT_THOUGHT === "1";
 const emitMessageIds = process.env.T3_ACP_EMIT_MESSAGE_IDS === "1";
-const useHermesModes = process.env.T3_ACP_USE_HERMES_MODES === "1";
 const emitAskQuestion = process.env.T3_ACP_EMIT_ASK_QUESTION === "1";
 const emitCreatePlan = process.env.T3_ACP_EMIT_CREATE_PLAN === "1";
 const emitCursorNotifications = process.env.T3_ACP_EMIT_CURSOR_NOTIFICATIONS === "1";
@@ -54,7 +53,7 @@ const permissionOptionIds = {
 };
 const sessionId = "mock-session-1";
 
-let currentModeId = useHermesModes ? "default" : "ask";
+let currentModeId = "ask";
 let currentModelId = "default";
 let parameterizedModelPicker = false;
 let currentReasoning = "medium";
@@ -267,29 +266,23 @@ function availableModels(): ReadonlyArray<{
   }));
 }
 
-const availableModes: ReadonlyArray<AcpSchema.SessionMode> = useHermesModes
-  ? [
-      { id: "default", name: "Default", description: "Ask before edits" },
-      { id: "accept_edits", name: "Accept Edits", description: "Allow workspace edits" },
-      { id: "dont_ask", name: "Don't Ask", description: "Allow edits for this session" },
-    ]
-  : [
-      {
-        id: "ask",
-        name: "Ask",
-        description: "Request permission before making any changes",
-      },
-      {
-        id: "architect",
-        name: "Architect",
-        description: "Design and plan software systems without implementation",
-      },
-      {
-        id: "code",
-        name: "Code",
-        description: "Write and modify code with full tool access",
-      },
-    ];
+const availableModes: ReadonlyArray<AcpSchema.SessionMode> = [
+  {
+    id: "ask",
+    name: "Ask",
+    description: "Request permission before making any changes",
+  },
+  {
+    id: "architect",
+    name: "Architect",
+    description: "Design and plan software systems without implementation",
+  },
+  {
+    id: "code",
+    name: "Code",
+    description: "Write and modify code with full tool access",
+  },
+];
 
 function modeState(): AcpSchema.SessionModeState {
   return {
@@ -323,23 +316,6 @@ const program = Effect.gen(function* () {
       return {
         protocolVersion: 1,
         agentCapabilities: { loadSession: true },
-        ...(useHermesModes
-          ? {
-              authMethods: [
-                {
-                  id: "mock-provider",
-                  name: "Mock provider credentials",
-                  description: "Already configured mock credentials",
-                },
-                {
-                  type: "terminal" as const,
-                  id: "hermes-setup",
-                  name: "Configure Hermes provider",
-                  args: ["--setup"],
-                },
-              ],
-            }
-          : {}),
       };
     }),
   );

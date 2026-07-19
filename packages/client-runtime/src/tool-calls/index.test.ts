@@ -155,15 +155,15 @@ describe("deriveToolCallPresentation", () => {
     );
   });
 
-  it("projects ACP content blocks from Hermes-style tool calls", () => {
+  it("projects ACP content blocks from provider tool calls", () => {
     const presentation = deriveToolCallPresentation({
       activityKind: "tool.completed",
       summary: "Edit",
       payload: {
-        itemId: "hermes-edit-1",
+        itemId: "acp-edit-content-1",
         itemType: "file_change",
         data: {
-          toolCallId: "hermes-edit-1",
+          toolCallId: "acp-edit-content-1",
           kind: "edit",
           content: [
             {
@@ -209,16 +209,16 @@ describe("deriveToolCallPresentation", () => {
     );
   });
 
-  it("uses Hermes ACP kinds and preserved titles for file and web searches", () => {
+  it("uses ACP kinds and preserved titles for file and web searches", () => {
     const fileSearch = deriveToolCallPresentation({
       activityKind: "tool.completed",
       summary: "Searched files",
       payload: {
-        itemId: "hermes-search-1",
+        itemId: "acp-search-1",
         itemType: "web_search",
         title: "Searched files",
         data: {
-          toolCallId: "hermes-search-1",
+          toolCallId: "acp-search-1",
           kind: "search",
           providerTitle: "search: makeAcpToolCallEvent",
           content: [
@@ -234,11 +234,11 @@ describe("deriveToolCallPresentation", () => {
       activityKind: "tool.completed",
       summary: "Searched web",
       payload: {
-        itemId: "hermes-web-1",
+        itemId: "acp-web-1",
         itemType: "web_search",
         title: "Searched web",
         data: {
-          toolCallId: "hermes-web-1",
+          toolCallId: "acp-web-1",
           kind: "fetch",
           providerTitle: "web search: ACP tool call rendering",
           content: [
