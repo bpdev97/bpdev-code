@@ -1,6 +1,6 @@
 # Hermes
 
-Hermes support is early access and uses Hermes Agent's local ACP server. Install and configure
+Hermes support is early access and uses Hermes Agent's local TUI gateway. Install and configure
 Hermes before adding it to T3 Code.
 
 ## Configure a profile
@@ -34,7 +34,7 @@ automatically.
 
 You can choose a Hermes instance and model for an individual chat or set it as a project's default
 model selection. Existing threads remain bound to the instance and Hermes session that created
-them.
+them. Threads created by the older ACP integration start a fresh Hermes session after migration.
 
 ## Manage automations
 
@@ -43,7 +43,8 @@ jobs for enabled Hermes profiles across all connected environments. You can crea
 pause or resume them, trigger an immediate run, and delete them. T3 uses the binary, profile, and
 server-side environment from each Hermes provider instance, so jobs remain isolated to that profile.
 
-Hermes's gateway must be running for scheduled jobs to fire automatically:
+Hermes's messaging gateway must be running for scheduled jobs to fire automatically. This is
+separate from the isolated chat backend T3 starts:
 
 ```bash
 hermes --profile <profile> cron status
@@ -56,12 +57,11 @@ configured on each job. It does not currently create or continue T3 chat threads
 ## Runtime modes
 
 - Approval required asks before protected operations.
-- Auto-accept edits lets Hermes edit the workspace while retaining sensitive-operation checks.
-- Full access uses Hermes's session-scoped don't-ask mode and automatically answers dangerous-command
-  prompts without creating permanent approval rules.
+- Auto-accept edits currently retains the same protected-operation prompts as Approval required;
+  gateway contract 2 has no safe session-local accept-edits mode.
+- Full access automatically answers gateway approval prompts once without creating permanent rules.
 
-Hermes does not currently expose a T3 plan/implementation toggle. Its ACP modes govern approval
-behavior instead.
+Hermes does not currently expose a T3 plan/implementation toggle.
 
 ## Troubleshooting
 
@@ -80,6 +80,5 @@ hermes --profile <profile> model
 If a restored thread fails, verify the same profile still owns the session. Changing a provider
 instance's profile intentionally points it at a different Hermes state database.
 
-Automation callbacks into T3 chats are not part of the ACP integration. They will use a Hermes
-platform plugin so a scheduled agent can create or continue a T3 thread and trigger the existing
-mobile push path.
+Automation callbacks into T3 chats are not part of this integration. Scheduled runs do not create
+or continue a T3 thread.

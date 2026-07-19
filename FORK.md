@@ -323,9 +323,7 @@ Shared upstream touchpoints containing small additive entries:
 - `packages/client-runtime/package.json`
 - `packages/client-runtime/src/operations/index.ts`
 - `apps/server/src/provider/builtInDrivers.ts`
-- `apps/server/src/provider/acp/AcpRuntimeModel.ts`
-- `apps/server/src/provider/acp/AcpSessionRuntime.ts`
-- `apps/server/src/provider/acp/AcpCoreRuntimeEvents.ts`
+- `packages/contracts/src/providerRuntime.ts`
 - `apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts`
 - `apps/server/src/ws.ts`
 - `apps/web/src/routeTree.gen.ts`
@@ -352,7 +350,7 @@ as a preserved unavailable-driver envelope rather than corrupting configuration.
 3. Preserve fork-owned paths unless an upstream provider interface changed.
 4. Resolve shared-file conflicts by reapplying only the additive Hermes entry or the reasoning-stream
    compatibility case; do not replace the upstream file wholesale.
-5. Review changes to provider instances, ACP session setup, canonical runtime events, settings forms,
+5. Review changes to provider instances, Hermes gateway contracts, canonical runtime events, settings forms,
    and mobile notification ingestion even when Git reports no textual conflict.
 6. Run the Hermes-focused tests, `vp check`, `vp run typecheck`, and `vp run lint:mobile`.
 7. Add a row to the sync ledger describing conflicts and behavioral changes.
@@ -373,9 +371,10 @@ successful end-to-end chat.
 | 2026-07-16 | `ecb35f75`   | `fdca1547`   | Hermes Agent 0.18.2 (`4281151`) source / ACP SDK 0.9.0 | No Hermes provider interfaces changed; mobile conflicts combined share-target flows with generic-chat guards and personal app identity.                                                                                                                                                                                                 |
 | 2026-07-17 | `8b546986`   | `24f9c2a0`   | Hermes Agent 0.18.2 (`4281151`) source / ACP SDK 0.9.0 | Upstream centralized brand assets and added restart-safe ACP assistant IDs; conflicts retained personal identity and combined the runtime UUID with Hermes message boundaries. Codex developer-instruction changes were merged with the fork's approval reviewer. No fork feature had an upstream-equivalent end-to-end implementation. |
 | 2026-07-17 | `24f9c2a0`   | `5ca32661`   | Hermes Agent 0.18.2 (`4281151`) source / ACP SDK 0.9.0 | No Hermes touchpoints changed. Upstream's higher-contrast question descriptions were adopted unchanged; its macOS development launcher identity work was adapted to the canonical personal distribution identity.                                                                                                                       |
+| 2026-07-18 | —            | —            | Hermes Agent 0.18.2 / TUI gateway contract 2           | Replaced ACP chat and utility integration with the supervised authenticated loopback TUI gateway. Reviewed Hermes main `614dc194` (contract 3); a real 0.18.2 probe verified ready, setup, model discovery, durable session creation, and close. Legacy ACP sessions are intentionally not migrated.                                    |
 
-Remove `FORK-HERMES-001` only when upstream T3 ships equivalent profile-aware Hermes ACP support and
-existing versioned cursors can be migrated or continued without losing sessions. Compare behavior
+Remove `FORK-HERMES-001` only when upstream T3 ships equivalent profile-aware Hermes TUI gateway support and
+current versioned gateway cursors can be migrated or continued without losing sessions. Compare behavior
 and tests before replacing the fork implementation; matching provider branding alone is not
 sufficient.
 

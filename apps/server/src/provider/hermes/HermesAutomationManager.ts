@@ -19,7 +19,7 @@ import * as Schema from "effect/Schema";
 import * as ProcessRunner from "../../processRunner.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
-import { HERMES_DRIVER_KIND } from "./HermesAcpSupport.ts";
+import { HERMES_DRIVER_KIND } from "./HermesGatewaySupport.ts";
 
 const decodeHermesSettings = Schema.decodeUnknownEffect(HermesSettings);
 const decodeUnknownJson = Schema.decodeUnknownEffect(Schema.UnknownFromJsonString);

@@ -4,7 +4,6 @@ import { extractJsonObject } from "@t3tools/shared/schemaJson";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import type * as EffectAcpErrors from "effect-acp/errors";
 
 import * as TextGeneration from "../../textGeneration/TextGeneration.ts";
 import {
@@ -18,14 +17,14 @@ import {
   sanitizePrTitle,
   sanitizeThreadTitle,
 } from "../../textGeneration/TextGenerationUtils.ts";
-import type { HermesAcpUtility } from "./HermesAcpUtility.ts";
-import { resolveHermesModelId } from "./HermesAcpSupport.ts";
+import type { HermesGatewayUtility } from "./HermesGatewayUtility.ts";
+import { resolveHermesModelId } from "./HermesGatewaySupport.ts";
 
 const HERMES_TIMEOUT_MS = 180_000;
 const isTextGenerationError = Schema.is(TextGenerationError);
 
 export function makeHermesTextGeneration(
-  utility: HermesAcpUtility,
+  utility: HermesGatewayUtility,
 ): Effect.Effect<TextGeneration.TextGeneration["Service"]> {
   const runHermesJson = <S extends Schema.Top>({
     operation,
@@ -57,18 +56,18 @@ export function makeHermesTextGeneration(
                 Effect.fail(
                   new TextGenerationError({
                     operation,
-                    detail: "Hermes ACP request timed out.",
+                    detail: "Hermes gateway request timed out.",
                   }),
                 ),
               onSome: Effect.succeed,
             }),
           ),
-          Effect.mapError((cause: EffectAcpErrors.AcpError | TextGenerationError) =>
+          Effect.mapError((cause) =>
             isTextGenerationError(cause)
               ? cause
               : new TextGenerationError({
                   operation,
-                  detail: "Hermes ACP request failed.",
+                  detail: "Hermes gateway request failed.",
                   cause,
                 }),
           ),
@@ -78,10 +77,7 @@ export function makeHermesTextGeneration(
       if (!trimmed) {
         return yield* new TextGenerationError({
           operation,
-          detail:
-            generated.response.stopReason === "cancelled"
-              ? "Hermes ACP request was cancelled."
-              : "Hermes Agent returned empty output.",
+          detail: "Hermes Agent returned empty output.",
         });
       }
 
@@ -105,7 +101,7 @@ export function makeHermesTextGeneration(
           ? cause
           : new TextGenerationError({
               operation,
-              detail: "Hermes ACP text generation failed.",
+              detail: "Hermes gateway text generation failed.",
               cause,
             }),
       ),

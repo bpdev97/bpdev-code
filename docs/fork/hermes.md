@@ -2,184 +2,121 @@
 
 ## Decision
 
-Manual Hermes chats use Hermes Agent's official ACP server. This fork does not depend on Hermex or
-the third-party `hermes-webui` REST/SSE service.
+Manual Hermes chats use Hermes Agent's official TUI gateway over authenticated loopback WebSocket.
+ACP is no longer used by this provider, and this fork does not depend on Hermex or the third-party
+`hermes-webui` service.
 
-ACP reuses T3's process, session, permission, model, event-ingestion, reconnection, and notification
-boundaries. The web API alternative exposes more Hermes-specific product concepts, but would add a
-second network session model, cookie authentication, SSE recovery, and an unstable external API.
+Hermes recommends the TUI gateway for custom desktop, web, and terminal hosts that need the full
+interactive agent surface. It exposes durable sessions, streaming messages and reasoning, tools,
+approvals, clarification, attachments, model selection, steering, rollback, subagents, and utility
+generation through one JSON-RPC protocol.
 
 Primary external references:
 
-- [Hermes ACP user guide](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/acp.md)
-- [Hermes ACP internals](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/developer-guide/acp-internals.md)
-- [Hermes programmatic integration options](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/developer-guide/programmatic-integration.md)
-- [Hermes platform adapter guide](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/developer-guide/adding-platform-adapters.md)
-- [Hermex README](https://github.com/uzairansaruzi/hermex/blob/master/README.md)
-- [Hermex contract notes](https://github.com/uzairansaruzi/hermex/blob/master/CONTRACT_TESTS.md)
+- [Programmatic integration](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/developer-guide/programmatic-integration.md)
+- [Gateway internals](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/developer-guide/gateway-internals.md)
+- [Gateway TypeScript client](https://github.com/NousResearch/hermes-agent/blob/main/apps/shared/src/json-rpc-gateway.ts)
+- [Gateway protocol types](https://github.com/NousResearch/hermes-agent/blob/main/ui-tui/src/gatewayTypes.ts)
+- [Gateway server implementation](https://github.com/NousResearch/hermes-agent/blob/main/tui_gateway/server.py)
+- [WebSocket transport](https://github.com/NousResearch/hermes-agent/blob/main/tui_gateway/ws.py)
 
 ## Architecture
 
-Each T3 provider instance names one explicit Hermes profile. T3 always starts:
+One T3 provider instance maps to one explicit Hermes profile and owns one supervised backend:
 
 ```text
-hermes --profile <profile> acp
+hermes --profile <profile> serve --isolated --host 127.0.0.1 --port 0
 ```
 
-The explicit flag prevents Hermes's sticky active-profile file from silently rerouting a T3
-instance. Each active T3 thread owns one scoped ACP process. Hermes persists the native session in
-its own state database; T3 stores canonical runtime events and this cursor:
+T3 supplies a random `HERMES_DASHBOARD_SESSION_TOKEN`, reads the selected port from
+`HERMES_BACKEND_READY port=<port>`, and connects only through loopback with the token. Do not set
+`HERMES_DESKTOP=1`: that enables Hermes's desktop cron ticker and would change the automation
+ownership model.
+
+Each active T3 thread has its own WebSocket connection and live Hermes session. Hermes owns the
+transcript in its profile database; T3 stores canonical runtime events and a durable cursor:
 
 ```json
 {
-  "schemaVersion": 1,
-  "transport": "acp",
-  "sessionId": "..."
+  "schemaVersion": 2,
+  "transport": "tui-gateway",
+  "sessionId": "20260718_..."
 }
 ```
 
-The transport discriminator is reserved for a future `gateway` cursor used by unsolicited
-automation delivery.
+The cursor stores Hermes's durable session key, never the short live gateway ID. Legacy ACP cursors
+are intentionally not migrated; opening one starts a new Hermes session. This loss was explicitly
+accepted for the gateway migration.
 
-One lazy utility ACP session per provider-instance lifecycle performs model discovery and serialized
-text generation. It is reset before and after utility prompts and is never exposed as a T3 thread.
+The adapter and utility service share the provider instance's gateway process. Model discovery uses
+`model.options`, readiness uses `setup.status`, and small text-generation jobs use the stateless
+`llm.oneshot` method, so they do not add turns to a chat transcript.
 
 ## Protocol mappings
 
-Runtime modes:
+- `session.create` / `session.resume` map T3 threads to Hermes-owned durable sessions.
+- `prompt.submit` starts a turn but remains pending for the full Hermes agent loop. T3 supervises
+  that RPC in the provider scope and returns from `sendTurn` immediately so steering and interrupt
+  controls remain available; `session.steer` handles text sent during the active turn.
+- `message.*`, `reasoning.*`, `tool.*`, `subagent.*`, and `background.complete` become canonical T3
+  runtime events. Per-session queues preserve Hermes event order before ingestion.
+- `image.attach` stages T3 image attachments before the next prompt.
+- `config.set` switches a resumed or active session's model. Discovered model IDs are qualified as
+  `<provider>:<model>` so provider routing is never guessed.
+- `session.interrupt`, `session.close`, and `session.undo` implement stop, lifecycle cleanup, and
+  rollback.
+- `approval.request` maps to T3 approvals. Accept, accept-for-session, and decline map to `once`,
+  `session`, and `deny`; T3 never chooses Hermes's permanent `always` scope.
+- `clarify.request`, `sudo.request`, and `secret.request` use T3's structured user-input path and
+  retain Hermes request IDs for the corresponding response method.
 
-| T3                  | Hermes ACP     |
-| ------------------- | -------------- |
-| `approval-required` | `default`      |
-| `auto-accept-edits` | `accept_edits` |
-| `full-access`       | `dont_ask`     |
-
-Permission decisions are selected by Hermes's advertised option ID:
-
-| T3                 | Hermes                                    |
-| ------------------ | ----------------------------------------- |
-| Accept             | `allow_once`                              |
-| Accept for session | `allow_session`, then a one-time fallback |
-| Decline            | `deny`                                    |
-
-`allow_always` is intentionally never selected for a session-scoped T3 decision. Hermes encodes
-both `allow_session` and `allow_always` using ACP's `allow_always` kind, so kind-only matching would
-persist approval accidentally.
-
-Hermes `agent_message_chunk` and `agent_thought_chunk` notifications map to T3 assistant and
-reasoning streams. Tool calls, plans, permissions, and terminal turn states use the shared canonical
-ACP event constructors. Canonical reasoning deltas are coalesced into a live thinking activity so
-they survive persistence and reconnects without creating one work-log row per token. ACP message
-chunks do not carry item IDs, so T3 synthesizes them. Hermes namespaces those IDs by the local runtime
-incarnation as well as the ACP session and segment; a
-resumed Hermes session must never reuse a persisted T3 message ID from an earlier process.
-
-When a user follows up while a Hermes prompt is still running, T3 sends Hermes's `/steer` command
-through a concurrent ACP prompt request. The ordinary ACP prompt path remains serialized. This lets
-Hermes receive guidance for a stalled or long-running turn instead of leaving the follow-up queued
-behind the very RPC it needs to steer.
-
-## Authentication and setup
-
-Hermes advertises the configured provider as an agent-managed authentication method and also
-advertises the terminal-only `hermes-setup` method. T3 selects the configured provider method and
-never invokes terminal setup. If terminal setup is the only advertised method, the profile is
-reported as unconfigured with the user-owned remediation:
-
-```text
-hermes --profile <profile> model
-```
+`full-access` auto-accepts an individual gateway approval with `once`. `approval-required` and
+`auto-accept-edits` surface approval requests. Gateway contract 2 has no session-local equivalent of
+ACP's `accept_edits`; treating it as full access would widen authority, so T3 keeps the safer behavior.
 
 ## Compatibility invariants
 
-- Profile instances must not share mutable process, model-cache, permission, or cursor state.
-- Existing ACP cursors must remain loadable after gateway support is added.
-- Provider output must flow through canonical runtime events; direct UI message writes bypass
-  persistence, reconnect semantics, and push notifications.
-- Synthetic assistant item IDs must remain unique across ACP process restarts that resume the same
-  Hermes session.
-- Active-turn follow-ups must use the explicit concurrent steering path; ordinary Hermes prompts
-  remain serialized.
-- Session approval must never become permanent approval.
-- Health refreshes may rerun the version command but must reuse cached model discovery.
-- Unknown future provider configuration must continue to round-trip through the generic instance
-  envelope.
-- Generic-only drivers must not synthesize a legacy default row in provider settings. They appear
-  only when an explicit `providerInstances` entry exists.
-- External errors may be logged structurally but must not copy credentials or raw stderr into user
-  messages.
-- Standard JSON-RPC error responses from ACP peers are normalized from Effect RPC defects into typed
-  ACP request errors. User-facing adapter errors may append a non-empty string at `data.details`, but
-  must not render arbitrary error data.
+- Provider instances must not share gateway process, profile, model cache, token, or cursor state.
+- Bind the backend to loopback, use a random dashboard token, and keep `--isolated` enabled.
+- Require Hermes desktop contract 2 or newer. Capability-probe responses and tolerate unknown future
+  events instead of pinning one Hermes version.
+- Preserve event order per session; JSON-RPC responses and terminal events may race.
+- Hermes remains the transcript owner. Do not add another Hermes conversation database.
+- Provider output must flow through canonical runtime events for persistence, reconnects, and push.
+- Never turn a session approval into permanent approval.
+- Do not include the dashboard token, raw stderr, secrets, or unredacted provider data in user-facing
+  errors or native event logs.
+- Setup remains terminal-owned. Report `hermes --profile <profile> model`; do not launch it from T3.
 
 ## Compatibility baseline
 
-The source review completed on 2026-07-12 against Hermes Agent 0.18.2 at commit
-`4281151ae859241351ba14d8c7682dc67ff4c126` and ACP SDK 0.9.0. The deterministic fixture covers
-`session/new`, `session/load`, `session/prompt`, `session/cancel`, `session/set_model`,
-`session/set_mode`, and `session/request_permission`.
+The gateway migration was reviewed on 2026-07-18 against Hermes main commit
+`614dc194ea7d853d39f9e84582ec62156f41a475` (desktop contract 3) and the locally installed Hermes
+Agent 0.18.2 (desktop contract 2). A real loopback probe verified authenticated `gateway.ready`,
+`setup.status`, `model.options`, `session.create`, durable `stored_session_id`, and `session.close`.
+Focused deterministic tests cover cursor rejection, model qualification, ordered message/reasoning/
+tool mapping, approvals, clarification, full-access behavior, and legacy ACP-session loss.
 
-The 2026-07-12 Mac mini smoke reached `session/set_model` with a real Hermes binary. Hermes then
-returned the provider-routing error described below, and T3 surfaced its `data.details` diagnostic.
-This was a partial transport and error-reporting smoke, not a successful end-to-end chat.
+## Automations
 
-On 2026-07-14, the opt-in `HermesAcpCliProbe.test.ts` passed against the locally installed Hermes
-Agent 0.18.2 using the configured OpenAI Codex provider and `gpt-5.6-sol`. A realistic read-only
-repository inspection produced genuine `agent_thought_chunk` notifications, assistant output, tool
-activity, and a completed turn. A trivial arithmetic prompt produced no thought notification because
-Hermes requests Codex reasoning summaries with `summary: auto`; clients must not manufacture a
-reasoning entry when the provider chooses not to return one.
+Automation management is deliberately unchanged. Availability and mutations still use
+`hermes --profile <profile> cron ...`; listing still projects the profile's bounded
+`cron/jobs.json`. The web and mobile clients do not write Hermes storage directly.
 
-## Known upstream compatibility
-
-Hermes Agent v0.17.0 can advertise a live OpenAI Codex model such as
-`openai-codex:gpt-5.6-terra` and then incorrectly route it to OpenRouter during
-`session/set_model`. The resulting JSON-RPC error says no provider is configured when OpenRouter is
-not enrolled. Preserve the explicit provider in Hermes rather than adding a T3 model-routing
-workaround; the ACP error normalization above exists to surface the upstream diagnostic accurately.
-
-## Automation follow-up
-
-The Automations route is a management plane for every enabled Hermes provider instance on every
-connected T3 environment. The provider instance remains the ownership boundary: its configured
-profile selects one profile-scoped Hermes cron store, and its binary path and server-only environment
-are reused for all commands.
-
-Hermes does not currently provide structured cron output. The server therefore uses two deliberately
-separate paths:
-
-- Availability and every mutation go through the official `hermes --profile <profile> cron ...` CLI.
-  Create, edit, pause, resume, run, and remove retain Hermes's own validation, locking, and next-run
-  computation.
-- Listing projects the profile's atomically-written `cron/jobs.json` into a small T3 contract after
-  probing `hermes cron list --all`. The projection is size-bounded and tolerant of unknown fields, and
-  a malformed or unavailable profile is isolated to that host instead of failing the aggregate list.
-
-The web and mobile clients share form validation, refresh the list through the same environment-scoped
-state, and serialize mutations per environment and provider instance. Neither client writes Hermes
-storage directly or exposes raw command output or server-only environment values. Desktop exposes the
-manager in its sidebar; mobile exposes a native list and editor under Settings → Automations.
-
-This management plane does not make scheduled runs into T3 conversations. ACP is request/response
-over stdio and cannot initiate a message after its host process has gone away. Unsolicited automation
-delivery still requires an out-of-tree Hermes platform plugin and a transport-discriminated gateway
-cursor. That plugin should translate durable deliveries into the same canonical turn lifecycle used
-here, allowing T3's existing agent-awareness relay to send mobile push notifications and deep-link
-into the exact automation-backed thread.
-
-Do not add polling against `hermes-webui` as a shortcut.
+The chat gateway does not currently convert scheduled runs into T3 threads or deliver a post-run
+reply into an existing thread. Do not enable Hermes's desktop cron ticker or add gateway polling as
+part of chat maintenance. That feature needs a separate delivery design with explicit ownership,
+deduplication, durable thread routing, and failure semantics.
 
 ## Revalidation procedure
 
-When updating the Hermes baseline:
-
-1. Compare Hermes's ACP auth, session setup, model state, mode state, permissions, and persistence
-   implementation with the mappings above.
-2. Run the adapter and text-generation tests against the deterministic ACP mock.
-3. With a configured real profile, verify version output, model discovery, a tool approval in each
-   runtime mode, process restart, and `session/load`.
-4. Verify `cron list --all`, create, edit, pause, resume, run, and remove against the same default and
-   named profiles, and compare the projected fields with the current `cron/jobs.json` schema.
-5. Update the compatibility baseline above only for checks that actually ran; distinguish source
-   review, partial smoke coverage, and a successful end-to-end chat.
-6. Record any T3 upstream sync separately in `/FORK.md`.
+1. Compare the official programmatic guide, gateway protocol types, WebSocket transport, and server
+   handlers with the mappings above.
+2. Run the focused Hermes tests and full repository checks.
+3. With configured default and named profiles, verify model discovery, create/resume, streaming,
+   reasoning, a tool call, approval decisions, clarification, steering, interrupt, rollback,
+   attachment handling, model switching, and restart/resume.
+4. Verify cron list/create/edit/pause/resume/run/remove separately; confirm chat startup does not run
+   a cron ticker.
+5. Record only checks that actually ran and distinguish source review, protocol smoke, and complete
+   browser-verified chat coverage.
