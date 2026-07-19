@@ -30,8 +30,9 @@ import {
   type ProviderSnapshotSettings,
 } from "../providerUpdateSettings.ts";
 import { makeHermesAdapter } from "./HermesAdapter.ts";
-import { HERMES_DRIVER_KIND } from "./HermesAcpSupport.ts";
-import { makeHermesAcpUtility } from "./HermesAcpUtility.ts";
+import { makeHermesGatewayRuntime } from "./HermesGatewayRuntime.ts";
+import { HERMES_DRIVER_KIND } from "./HermesGatewaySupport.ts";
+import { makeHermesGatewayUtility } from "./HermesGatewayUtility.ts";
 import { buildInitialHermesProviderSnapshot, checkHermesProviderStatus } from "./HermesProvider.ts";
 import { makeHermesTextGeneration } from "./HermesTextGeneration.ts";
 
@@ -99,10 +100,12 @@ export const HermesDriver: ProviderDriver<HermesSettings, HermesDriverEnv> = {
         env: processEnv,
       });
 
-      const utility = yield* makeHermesAcpUtility(effectiveConfig, processEnv);
+      const gatewayRuntime = yield* makeHermesGatewayRuntime(effectiveConfig, processEnv);
+      const utility = yield* makeHermesGatewayUtility(effectiveConfig, processEnv, gatewayRuntime);
       const adapter = yield* makeHermesAdapter(effectiveConfig, {
         environment: processEnv,
         instanceId,
+        gatewayRuntime,
         ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
       });
       const textGeneration = yield* makeHermesTextGeneration(utility);
@@ -110,6 +113,7 @@ export const HermesDriver: ProviderDriver<HermesSettings, HermesDriverEnv> = {
         effectiveConfig,
         processEnv,
         utility.getModels,
+        utility.getSetupStatus,
       ).pipe(
         Effect.map(stampIdentity),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, childProcessSpawner),

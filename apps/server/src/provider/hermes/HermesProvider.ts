@@ -4,18 +4,14 @@ import {
   type ServerProviderModel,
 } from "@t3tools/contracts";
 import { createModelCapabilities } from "@t3tools/shared/model";
-import { causeErrorTag } from "@t3tools/shared/observability";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
-import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
-import type * as EffectAcpErrors from "effect-acp/errors";
-import type * as EffectAcpSchema from "effect-acp/schema";
 
+import { type ProviderAdapterError, ProviderAdapterRequestError } from "../Errors.ts";
 import {
   buildServerProvider,
   isCommandMissingCause,
@@ -24,7 +20,8 @@ import {
   spawnAndCollect,
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
-import { HERMES_DRIVER_KIND } from "./HermesAcpSupport.ts";
+import type { HermesModelOptions } from "./HermesGatewayUtility.ts";
+import { HERMES_DRIVER_KIND } from "./HermesGatewaySupport.ts";
 
 const HERMES_PRESENTATION = {
   displayName: "Hermes",
@@ -34,34 +31,26 @@ const HERMES_PRESENTATION = {
 } as const;
 const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({ optionDescriptors: [] });
 const VERSION_PROBE_TIMEOUT_MS = 4_000;
-const MODEL_DISCOVERY_TIMEOUT_MS = 15_000;
+const MODEL_DISCOVERY_TIMEOUT_MS = 20_000;
 
 export function describeHermesDiscoveryFailure(
-  error: EffectAcpErrors.AcpError | undefined,
+  error: ProviderAdapterError | undefined,
   profile: string,
 ): {
   readonly auth: { readonly status: "unauthenticated" | "unknown" };
   readonly message: string;
 } {
-  if (
-    (error?._tag === "AcpTransportError" && error.method === "authenticate") ||
-    (error?._tag === "AcpRequestError" && error.method === "authenticate")
-  ) {
+  const detail = error?.message ?? "";
+  if (/not configured|no llm provider|unauthenticated/i.test(detail)) {
     return {
       auth: { status: "unauthenticated" },
       message: `Hermes profile '${profile}' is not ready. Configure it with \`hermes --profile ${profile} model\`, then refresh provider status.`,
     };
   }
-  if (error?._tag === "AcpProtocolParseError") {
-    return {
-      auth: { status: "unknown" },
-      message:
-        "Hermes Agent returned an incompatible ACP response. Update Hermes or check the fork compatibility record.",
-    };
-  }
   return {
     auth: { status: "unknown" },
-    message: "Hermes Agent is installed but ACP startup failed. Check server logs for details.",
+    message:
+      "Hermes Agent is installed but its TUI gateway did not start. Check server logs for details.",
   };
 }
 
@@ -77,34 +66,37 @@ function modelsFromSettings(
   );
 }
 
-export function buildHermesModelsFromSessionState(
-  modelState: EffectAcpSchema.SessionModelState | null | undefined,
+export function buildHermesModelsFromGateway(
+  options: HermesModelOptions | null | undefined,
 ): ReadonlyArray<ServerProviderModel> {
-  if (!modelState) return [];
   const seen = new Set<string>();
-  return modelState.availableModels.flatMap((model) => {
-    const slug = model.modelId.trim();
-    if (!slug || seen.has(slug)) return [];
-    seen.add(slug);
-    const separator = slug.indexOf(":");
-    const subProvider = separator > 0 ? slug.slice(0, separator) : undefined;
-    return [
-      {
-        slug,
-        name: model.name.trim() || slug,
-        ...(subProvider ? { subProvider } : {}),
-        isCustom: false,
-        capabilities: EMPTY_CAPABILITIES,
-      } satisfies ServerProviderModel,
-    ];
-  });
+  return (options?.providers ?? []).flatMap((provider) =>
+    provider.authenticated === false
+      ? []
+      : (provider.models ?? []).flatMap((model) => {
+          const cleanModel = model.trim();
+          if (!cleanModel) return [];
+          const slug = `${provider.slug}:${cleanModel}`;
+          if (seen.has(slug)) return [];
+          seen.add(slug);
+          return [
+            {
+              slug,
+              name: cleanModel,
+              subProvider: provider.name.trim() || provider.slug,
+              isCustom: false,
+              capabilities: EMPTY_CAPABILITIES,
+            } satisfies ServerProviderModel,
+          ];
+        }),
+  );
 }
 
 export const buildInitialHermesProviderSnapshot = Effect.fn("buildInitialHermesProviderSnapshot")(
-  function* (hermesSettings: HermesSettings) {
+  function* (settings: HermesSettings) {
     const checkedAt = DateTime.formatIso(yield* DateTime.now);
-    const models = modelsFromSettings(hermesSettings.customModels);
-    if (!hermesSettings.enabled) {
+    const models = modelsFromSettings(settings.customModels);
+    if (!settings.enabled) {
       return buildServerProvider({
         presentation: HERMES_PRESENTATION,
         enabled: false,
@@ -129,7 +121,7 @@ export const buildInitialHermesProviderSnapshot = Effect.fn("buildInitialHermesP
         version: null,
         status: "warning",
         auth: { status: "unknown" },
-        message: `Checking Hermes profile '${hermesSettings.profile}'...`,
+        message: `Checking Hermes profile '${settings.profile}'...`,
       },
     });
   },
@@ -137,15 +129,15 @@ export const buildInitialHermesProviderSnapshot = Effect.fn("buildInitialHermesP
 
 const runVersionCommand = (settings: HermesSettings, environment: NodeJS.ProcessEnv) =>
   Effect.gen(function* () {
-    const command = settings.binaryPath || "hermes";
-    const args = ["--profile", settings.profile, "acp", "--version"];
-    const spawnCommand = yield* resolveSpawnCommand(command, args, { env: environment });
+    const executable = settings.binaryPath || "hermes";
+    const args = ["--version"];
+    const resolved = yield* resolveSpawnCommand(executable, args, { env: environment });
     return yield* spawnAndCollect(
-      command,
-      ChildProcess.make(spawnCommand.command, spawnCommand.args, {
+      executable,
+      ChildProcess.make(resolved.command, resolved.args, {
         env: environment,
         extendEnv: true,
-        shell: spawnCommand.shell,
+        shell: resolved.shell,
       }),
     );
   });
@@ -153,34 +145,29 @@ const runVersionCommand = (settings: HermesSettings, environment: NodeJS.Process
 export const checkHermesProviderStatus = Effect.fn("checkHermesProviderStatus")(function* (
   settings: HermesSettings,
   environment: NodeJS.ProcessEnv,
-  discoverModels: Effect.Effect<
-    EffectAcpSchema.SessionModelState | null | undefined,
-    EffectAcpErrors.AcpError
-  >,
+  discoverModels: Effect.Effect<HermesModelOptions, ProviderAdapterError>,
+  getSetupStatus: Effect.Effect<{ readonly provider_configured?: boolean }, ProviderAdapterError>,
 ): Effect.fn.Return<ServerProviderDraft, never, ChildProcessSpawner.ChildProcessSpawner> {
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const fallbackModels = modelsFromSettings(settings.customModels);
-  if (!settings.enabled) {
-    return yield* buildInitialHermesProviderSnapshot(settings);
-  }
+  if (!settings.enabled) return yield* buildInitialHermesProviderSnapshot(settings);
 
   const versionResult = yield* runVersionCommand(settings, environment).pipe(
     Effect.timeoutOption(VERSION_PROBE_TIMEOUT_MS),
     Effect.result,
   );
   if (Result.isFailure(versionResult)) {
-    const error = versionResult.failure;
     return buildServerProvider({
       presentation: HERMES_PRESENTATION,
       enabled: true,
       checkedAt,
       models: fallbackModels,
       probe: {
-        installed: !isCommandMissingCause(error),
+        installed: !isCommandMissingCause(versionResult.failure),
         version: null,
         status: "error",
         auth: { status: "unknown" },
-        message: isCommandMissingCause(error)
+        message: isCommandMissingCause(versionResult.failure)
           ? "Hermes Agent (`hermes`) is not installed or not on PATH."
           : "Failed to execute the Hermes Agent health check.",
       },
@@ -197,11 +184,10 @@ export const checkHermesProviderStatus = Effect.fn("checkHermesProviderStatus")(
         version: null,
         status: "error",
         auth: { status: "unknown" },
-        message: "Hermes Agent timed out while reporting its ACP version.",
+        message: "Hermes Agent timed out while reporting its version.",
       },
     });
   }
-
   const versionOutput = versionResult.success.value;
   const version = parseGenericCliVersion(`${versionOutput.stdout}\n${versionOutput.stderr}`);
   if (versionOutput.code !== 0) {
@@ -215,22 +201,28 @@ export const checkHermesProviderStatus = Effect.fn("checkHermesProviderStatus")(
         version,
         status: "error",
         auth: { status: "unknown" },
-        message: "Hermes Agent is installed but its ACP version check failed.",
+        message: "Hermes Agent is installed but its version check failed.",
       },
     });
   }
 
-  const discoveryExit = yield* discoverModels.pipe(
+  const setup = yield* getSetupStatus.pipe(
     Effect.timeoutOption(MODEL_DISCOVERY_TIMEOUT_MS),
-    Effect.exit,
+    Effect.result,
   );
-  if (Exit.isFailure(discoveryExit)) {
-    const failure = discoveryExit.cause.reasons.find(Cause.isFailReason)?.error;
-    const diagnostic = describeHermesDiscoveryFailure(failure, settings.profile);
-    yield* Effect.logWarning("Hermes ACP model discovery failed", {
-      errorTag: causeErrorTag(discoveryExit.cause),
-      profile: settings.profile,
-    });
+  if (
+    Result.isSuccess(setup) &&
+    Option.isSome(setup.success) &&
+    setup.success.value.provider_configured === false
+  ) {
+    const diagnostic = describeHermesDiscoveryFailure(
+      new ProviderAdapterRequestError({
+        provider: HERMES_DRIVER_KIND,
+        method: "setup.status",
+        detail: "No LLM provider configured.",
+      }),
+      settings.profile,
+    );
     return buildServerProvider({
       presentation: HERMES_PRESENTATION,
       enabled: true,
@@ -245,7 +237,16 @@ export const checkHermesProviderStatus = Effect.fn("checkHermesProviderStatus")(
       },
     });
   }
-  if (Option.isNone(discoveryExit.value)) {
+
+  const discovery = yield* discoverModels.pipe(
+    Effect.timeoutOption(MODEL_DISCOVERY_TIMEOUT_MS),
+    Effect.result,
+  );
+  if (Result.isFailure(discovery) || Option.isNone(discovery.success)) {
+    const diagnostic = describeHermesDiscoveryFailure(
+      Result.isFailure(discovery) ? discovery.failure : undefined,
+      settings.profile,
+    );
     return buildServerProvider({
       presentation: HERMES_PRESENTATION,
       enabled: true,
@@ -255,18 +256,17 @@ export const checkHermesProviderStatus = Effect.fn("checkHermesProviderStatus")(
         installed: true,
         version,
         status: "error",
-        auth: { status: "unknown" },
-        message: "Hermes ACP startup timed out while discovering models.",
+        auth: diagnostic.auth,
+        message: diagnostic.message,
       },
     });
   }
-
-  const discoveredModels = buildHermesModelsFromSessionState(discoveryExit.value.value);
+  const discovered = buildHermesModelsFromGateway(discovery.success.value);
   return buildServerProvider({
     presentation: HERMES_PRESENTATION,
     enabled: true,
     checkedAt,
-    models: modelsFromSettings(settings.customModels, discoveredModels),
+    models: modelsFromSettings(settings.customModels, discovered),
     probe: {
       installed: true,
       version,
