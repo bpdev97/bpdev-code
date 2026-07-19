@@ -73,7 +73,7 @@ export function makeAggregate(
 
   const onlyTerminal = active.length === 0;
   return {
-    title: "T3 Code",
+    title: "Tangent",
     subtitle: onlyTerminal
       ? newest.phase === "failed"
         ? "Agent work failed"

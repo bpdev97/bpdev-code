@@ -10,12 +10,12 @@ import {
 describe("electron development launcher", () => {
   it("uses the personal fork identity for development and packaged launchers", () => {
     assert.deepEqual(resolveDesktopIdentity({ development: true, bundleIdSuffix: "worktree2" }), {
-      displayName: "bpdev code Dev",
+      displayName: "Tangent Dev",
       bundleId: "com.bpdev97.t3code.macos.dev.worktree2",
       protocolSchemes: ["bpdev-code-dev"],
     });
     assert.deepEqual(resolveDesktopIdentity({ development: false, bundleIdSuffix: "ignored" }), {
-      displayName: "bpdev code",
+      displayName: "Tangent",
       bundleId: "com.bpdev97.t3code.macos",
       protocolSchemes: ["bpdev-code"],
     });

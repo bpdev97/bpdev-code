@@ -103,7 +103,7 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.userDataDirName, "bpdev-code");
       assert.equal(environment.legacyUserDataDirName, "bpdev-code");
       assert.equal(environment.appUserModelId, "com.bpdev97.t3code.macos");
-      assert.equal(environment.displayName, "bpdev code");
+      assert.equal(environment.displayName, "Tangent");
     }),
   );
 

@@ -64,7 +64,7 @@ const registrationRecordStore = vi.hoisted(() => ({
 vi.mock("expo-constants", () => ({
   default: {
     expoConfig: {
-      name: "bpdev code",
+      name: "Tangent",
       scheme: "bpdev-code",
       version: "1.0.0",
       extra: {},
