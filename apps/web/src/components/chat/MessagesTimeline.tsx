@@ -183,6 +183,7 @@ interface MessagesTimelineProps {
   contentInsetEndAdjustment: number;
   onIsAtEndChange: (isAtEnd: boolean) => void;
   onManualNavigation: () => void;
+  hideEmptyPlaceholder?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -216,6 +217,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   contentInsetEndAdjustment,
   onIsAtEndChange,
   onManualNavigation,
+  hideEmptyPlaceholder = false,
 }: MessagesTimelineProps) {
   const [expandedResponseIds, setExpandedResponseIds] = useState<ReadonlySet<string>>(new Set());
   const [expandedWorkGroupIds, setExpandedWorkGroupIds] = useState<ReadonlySet<string>>(new Set());
@@ -478,6 +480,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   );
 
   if (rows.length === 0 && !isWorking) {
+    if (hideEmptyPlaceholder) {
+      return null;
+    }
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-sm text-muted-foreground/30">
