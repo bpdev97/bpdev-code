@@ -10,7 +10,20 @@ verification commands.
 
 - `vp check` and `vp run typecheck` must pass before considering tasks completed.
   - If changing native mobile code, `vp run lint:mobile` must also pass.
-- Use `vp test` for the built-in Vite+ test command and `vp run test` when you specifically need the `test` package script.
+- Keep local verification focused on the files and packages changed before running those required
+  repository-wide gates.
+  - Use `vp test run <test-files>` for focused built-in Vite+ tests. Use `vp run test` only when the
+    affected package specifically requires its `test` script.
+  - Backend changes must include and run focused tests for the changed behavior.
+  - Run targeted formatting, lint, and type checks for the affected scope when available.
+- After frontend feature development or any user-visible frontend behavior change, the primary
+  agent must use the `test-t3-app` skill once after integrating the work. Launch one isolated
+  environment, authenticate through the printed pairing URL, and verify the affected flow in the
+  controlled browser.
+  - Subagents must not independently launch dev servers or repeat integrated browser verification
+    unless their delegated task explicitly requires it.
+  - Stop dev servers, watchers, and other long-running verification processes when the focused
+    verification is complete.
 
 ## Project Snapshot
 
