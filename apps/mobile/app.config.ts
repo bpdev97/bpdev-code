@@ -123,7 +123,7 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
       {
         name: "AgentActivity",
         displayName: "Agent Activity",
-        description: "Shows the current state of active T3 Code agents.",
+        description: `Shows the current state of active ${personalMobile.appName} agents.`,
         supportedFamilies: ["systemSmall", "systemMedium", "accessoryRectangular"],
       },
     ],
@@ -193,8 +193,7 @@ const config: ExpoConfig = {
       NSAppTransportSecurity: {
         NSAllowsArbitraryLoads: true,
       },
-      NSLocalNetworkUsageDescription:
-        "Allow T3 Code to connect to T3 Code servers on your local network or tailnet.",
+      NSLocalNetworkUsageDescription: `Allow ${personalMobile.appName} to connect to coding-agent servers on your local network or tailnet.`,
       ITSAppUsesNonExemptEncryption: false,
     },
   },
@@ -273,7 +272,7 @@ const config: ExpoConfig = {
     [
       "expo-camera",
       {
-        cameraPermission: "Allow T3 Code to access your camera so you can scan pairing QR codes.",
+        cameraPermission: `Allow ${personalMobile.appName} to access your camera so you can scan pairing QR codes.`,
         barcodeScannerEnabled: true,
         recordAudioAndroid: false,
       },

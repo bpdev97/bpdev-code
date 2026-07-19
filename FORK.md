@@ -1,7 +1,7 @@
 # About this fork
 
-This is my personal build of [T3 Code](https://github.com/pingdotgg/t3code). I keep it in
-[`bpdev97/bpdev-code`](https://github.com/bpdev97/bpdev-code) so I can install it alongside the
+This is Tangent, my personal build of [T3 Code](https://github.com/pingdotgg/t3code). I keep it in
+[`bpdev97/tangent`](https://github.com/bpdev97/tangent) so I can install it alongside the
 official app and ship my own iOS and macOS updates.
 
 ## Branches

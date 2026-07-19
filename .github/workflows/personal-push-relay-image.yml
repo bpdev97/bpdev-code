@@ -1,4 +1,4 @@
-name: bpdev code Push Relay Image
+name: Tangent Push Relay Image
 
 on:
   workflow_dispatch:

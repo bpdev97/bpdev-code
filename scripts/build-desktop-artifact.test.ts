@@ -85,8 +85,8 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
   });
 
   it("switches desktop packaging product names to nightly for nightly builds", () => {
-    assert.equal(resolveDesktopProductName("0.0.17"), "bpdev code");
-    assert.equal(resolveDesktopProductName("0.0.17-nightly.20260413.42"), "bpdev code Nightly");
+    assert.equal(resolveDesktopProductName("0.0.17"), "Tangent");
+    assert.equal(resolveDesktopProductName("0.0.17-nightly.20260413.42"), "Tangent Nightly");
   });
 
   it("switches desktop packaging icons to the nightly artwork for nightly versions", () => {
@@ -471,7 +471,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
       const mac = config.mac as Record<string, unknown>;
       assert.equal(config.appId, "com.bpdev97.t3code.macos");
-      assert.equal(config.artifactName, "bpdev-code-${version}-${arch}.${ext}");
+      assert.equal(config.artifactName, "tangent-${version}-${arch}.${ext}");
       assert.equal(mac.entitlements, "/tmp/entitlements.mac.plist");
       assert.equal(mac.provisioningProfile, "/tmp/t3code.provisionprofile");
       assert.notProperty(mac, "protocols");

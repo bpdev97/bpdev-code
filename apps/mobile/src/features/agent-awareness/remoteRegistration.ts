@@ -572,7 +572,7 @@ function armAgentAwarenessLiveActivityForLocalWorkNow(input: {
     }
     const nowIso = new Date(Date.now()).toISOString();
     const activity = AgentActivity.start({
-      title: Constants.expoConfig?.name ?? "bpdev code",
+      title: Constants.expoConfig?.name ?? "Tangent",
       subtitle: "Agent work in progress",
       activeCount: 1,
       updatedAt: nowIso,

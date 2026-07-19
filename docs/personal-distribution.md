@@ -1,4 +1,4 @@
-# bpdev code iOS and macOS Distribution
+# Tangent iOS and macOS Distribution
 
 This guide covers the `bpdev97` personal distribution. It intentionally omits Android, the hosted web
 app, npm publishing, Clerk, and the managed relay. Mobile connects directly to an environment over
@@ -10,13 +10,13 @@ the APNs provider key to phones or T3 servers.
 
 ## Public identity
 
-- GitHub repository: `bpdev97/bpdev-code`
+- GitHub repository: `bpdev97/tangent`
 - Expo owner: `bpdev97`
 - Apple team: `BL9B7SKPHX`
 - iOS bundle identifier: `com.bpdev97.t3code.ios`
 - macOS bundle identifier: `com.bpdev97.t3code.macos`
-- Display name: `bpdev code`
-- App Store Connect name: `bpdev code`
+- Display name: `Tangent`
+- App Store Connect name: `Tangent`
 - App Store Connect app ID: `6790012550`
 - Mobile URL scheme: `bpdev-code://`
 - Desktop state root: `~/.bpdev-code`
@@ -24,11 +24,11 @@ the APNs provider key to phones or T3 servers.
 
 ## Expo project
 
-The Expo project is `@bpdev97/t3-code-personal`, with public project ID
+The Expo project remains `@bpdev97/t3-code-personal`, with public project ID
 `8c5853ac-04f2-4d67-9f59-a699cb3c9776`.
 
 Add an Expo access token as the GitHub Actions secret `EXPO_TOKEN` before running the workflow.
-The App Store Connect record is `bpdev code` (`6790012550`), and the ID is committed in the
+The App Store Connect record is `Tangent` (`6790012550`), and the ID is committed in the
 `submit.personal.ios.ascAppId` field in `apps/mobile/eas.json`.
 
 The personal iOS workflow supports two manually selected operations:
@@ -60,7 +60,7 @@ application with hardened runtime support and notarizes it through Apple.
 3. Make a harmless JavaScript-only change and run the workflow in `update` mode.
 4. Confirm the update appears after fully closing and reopening the iOS app.
 5. Dispatch the macOS workflow with version `1.0.0`.
-6. Install the DMG and confirm the About panel reports the `bpdev code` GitHub update feed.
+6. Install the DMG and confirm the About panel reports the `Tangent` GitHub update feed.
 7. Publish `1.0.1` and exercise the in-app desktop updater.
 
 ## Upstream synchronization

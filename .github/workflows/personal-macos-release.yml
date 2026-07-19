@@ -1,4 +1,4 @@
-name: bpdev code macOS Release
+name: Tangent macOS Release
 
 on:
   workflow_dispatch:
@@ -113,7 +113,7 @@ jobs:
         with:
           tag_name: ${{ steps.release-meta.outputs.tag }}
           target_commitish: ${{ github.sha }}
-          name: bpdev code v${{ steps.release-meta.outputs.version }}
+          name: Tangent v${{ steps.release-meta.outputs.version }}
           generate_release_notes: true
           prerelease: false
           make_latest: true

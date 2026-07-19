@@ -1,11 +1,12 @@
-# T3 Code
+# Tangent
 
-T3 Code is a minimal web GUI for coding agents (currently Codex, Claude, Cursor, and OpenCode, more coming soon).
+Tangent is my personal fork of [T3 Code](https://github.com/pingdotgg/t3code), a minimal web GUI
+for coding agents. It carries a small distribution-specific layer while staying close to upstream.
 
 ## Installation
 
 > [!WARNING]
-> T3 Code currently supports Codex, Claude, Cursor, and OpenCode.
+> Tangent currently supports Codex, Claude, Cursor, and OpenCode.
 > Install and authenticate at least one provider before use:
 >
 > - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
@@ -23,25 +24,9 @@ Tip: Use `npx t3@latest --help` for the full CLI reference.
 
 ### Desktop app
 
-Install the latest version of the desktop app from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), or from your favorite package registry:
-
-#### Windows (`winget`)
-
-```bash
-winget install T3Tools.T3Code
-```
-
-#### macOS (Homebrew)
-
-```bash
-brew install --cask t3-code
-```
-
-#### Arch Linux (AUR)
-
-```bash
-yay -S t3code-bin
-```
+Install the latest Tangent desktop build from
+[GitHub Releases](https://github.com/bpdev97/tangent/releases). The upstream package-manager
+installers continue to install T3 Code rather than this fork.
 
 ## Some notes
 
@@ -63,7 +48,7 @@ There's no public docs site yet, checkout the miscellaneous markdown files in [d
 
 ### Install `vp`
 
-T3 Code uses Vite+ so you'll need to install the global `vp` command-line tool.
+Tangent uses Vite+ so you'll need to install the global `vp` command-line tool.
 
 #### macOS / Linux
 

@@ -1,4 +1,4 @@
-name: bpdev code iOS Release
+name: Tangent iOS Release
 
 on:
   workflow_dispatch:

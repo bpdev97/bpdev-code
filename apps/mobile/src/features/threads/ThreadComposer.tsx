@@ -26,6 +26,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import type { MenuAction } from "@react-native-menu/menu";
+import { APP_NAME } from "../../branding";
 import ImageViewing from "react-native-image-viewing";
 import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
 import { useThemeColor } from "../../lib/useThemeColor";
@@ -513,7 +514,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     // the app is foregrounded and the activity token can be registered.
     armAgentAwarenessLiveActivityForLocalWork({
       threadTitle: props.selectedThread.title,
-      projectTitle: props.environmentLabel ?? "T3 Code",
+      projectTitle: props.environmentLabel ?? APP_NAME,
     });
     try {
       await onSendMessage();

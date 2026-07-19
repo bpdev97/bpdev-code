@@ -1,4 +1,4 @@
-name: bpdev code CI
+name: Tangent CI
 
 on:
   pull_request:

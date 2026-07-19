@@ -2,25 +2,25 @@ import { View } from "react-native";
 
 import { AppText as Text } from "./AppText";
 import { T3Wordmark } from "./T3Wordmark";
+import { APP_NAME } from "../branding";
 import { useThemeColor } from "../lib/useThemeColor";
 
 /**
  * Compact brand lockup sized for native navigation bars.
  */
 export function CompactBrandTitle() {
-  const iconColor = useThemeColor("--color-icon");
   const mutedColor = useThemeColor("--color-foreground-muted");
   const subtleColor = useThemeColor("--color-subtle");
 
   return (
     <View
       aria-level={1}
-      accessibilityLabel="T3 Code"
+      accessibilityLabel={APP_NAME}
       accessible
       role="heading"
       style={{ alignItems: "center", flexDirection: "row", gap: 6 }}
     >
-      <T3Wordmark color={iconColor} height={11} />
+      <T3Wordmark color={mutedColor} height={12} />
       <Text
         style={{
           color: mutedColor,
@@ -29,7 +29,7 @@ export function CompactBrandTitle() {
           letterSpacing: -0.35,
         }}
       >
-        Code
+        {APP_NAME}
       </Text>
       <View
         style={{
