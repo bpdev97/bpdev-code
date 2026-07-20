@@ -3,6 +3,10 @@ export const PERSONAL_DISTRIBUTION = {
     owner: "bpdev97",
     name: "tangent",
   },
+  connect: {
+    bootServiceName: "tangent",
+    displayName: "Tangent",
+  },
   mobile: {
     appName: "Tangent",
     developmentAppName: "Tangent Dev",

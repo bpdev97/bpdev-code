@@ -58,12 +58,7 @@ function modelsFromSettings(
   customModels: ReadonlyArray<string> | undefined,
   discoveredModels: ReadonlyArray<ServerProviderModel> = [],
 ): ReadonlyArray<ServerProviderModel> {
-  return providerModelsFromSettings(
-    discoveredModels,
-    HERMES_DRIVER_KIND,
-    customModels ?? [],
-    EMPTY_CAPABILITIES,
-  );
+  return providerModelsFromSettings(discoveredModels, customModels ?? [], EMPTY_CAPABILITIES);
 }
 
 export function buildHermesModelsFromGateway(

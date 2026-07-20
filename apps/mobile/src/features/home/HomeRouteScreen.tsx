@@ -4,8 +4,6 @@ import { useNavigation } from "@react-navigation/native";
 import { useMemo, useState } from "react";
 
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
-import { APP_NAME } from "../../branding";
-import { renderCompactBrandTitle } from "../../components/CompactBrandTitle";
 import { useProjects, useThreadShells } from "../../state/entities";
 import { usePendingNewTasks } from "../../state/use-pending-new-tasks";
 import { useWorkspaceState } from "../../state/workspace";
@@ -97,10 +95,8 @@ export function HomeRouteScreen() {
       onStartNewTask={() => navigation.navigate("NewTaskSheet", { screen: "NewTask" })}
     >
       <>
-        {/* Restore the compact title in case the split branch blanked it. */}
-        <NativeStackScreenOptions
-          options={{ title: APP_NAME, headerTitle: renderCompactBrandTitle }}
-        />
+        {/* Restore the title in case the split branch blanked it. */}
+        <NativeStackScreenOptions options={{ title: "Threads", headerTitle: "Threads" }} />
         <HomeHeader
           environments={environments}
           searchQuery={searchQuery}
