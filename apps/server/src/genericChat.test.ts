@@ -38,6 +38,7 @@ function orchestrationEngine(commands: Ref.Ref<ReadonlyArray<OrchestrationComman
     readEvents: () => Stream.empty,
     dispatch: (command) =>
       Ref.update(commands, (current) => [...current, command]).pipe(Effect.as({ sequence: 1 })),
+    latestSequence: Effect.succeed(0),
     streamDomainEvents: Stream.empty,
   });
 }
